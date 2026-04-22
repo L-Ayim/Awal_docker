@@ -277,6 +277,34 @@ async function postJson<TResponse>(
   return (await response.json()) as TResponse;
 }
 
+async function requestStructuredChatCompletion(params: {
+  baseUrl: string;
+  apiKey: string | null;
+  model: string;
+  messages: Array<{
+    role: "system" | "user" | "assistant";
+    content: string;
+  }>;
+  requireJsonMode?: boolean;
+}) {
+  return postJson<{
+    choices?: Array<{
+      message?: {
+        content?: string | null;
+      };
+    }>;
+    model?: string;
+  }>(`${params.baseUrl}/chat/completions`, {
+    apiKey: params.apiKey,
+    body: {
+      model: params.model,
+      temperature: 0,
+      ...(params.requireJsonMode ? { response_format: { type: "json_object" } } : {}),
+      messages: params.messages
+    }
+  });
+}
+
 export async function generateEmbeddings(inputs: string[]) {
   const config = getAiRuntimeConfig();
 
@@ -348,34 +376,57 @@ export async function generateGroundedAnswer(params: {
     };
   }
 
-  const json = await postJson<{
+  const messages = [
+    {
+      role: "system" as const,
+      content:
+        "You are Awal. Decide whether the user needs a conversational reply, a grounded document answer, or an insufficient-evidence response. When evidence candidates are supplied, think through which ones are actually relevant before answering. The runtime, not you, will render final citations, so never write citations in the answer text. Return JSON only, matching the requested schema exactly. Do not reveal chain-of-thought. Do not output <think> tags or hidden reasoning."
+    },
+    {
+      role: "user" as const,
+      content: buildEvidencePayload(params.query, params.matches)
+    }
+  ];
+
+  let json: {
     choices?: Array<{
       message?: {
         content?: string | null;
       };
     }>;
     model?: string;
-  }>(`${config.generationBaseUrl}/chat/completions`, {
-    apiKey: config.generationApiKey,
-    body: {
-      model: config.llmModel,
-      temperature: 0,
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are Awal. Decide whether the user needs a conversational reply, a grounded document answer, or an insufficient-evidence response. When evidence candidates are supplied, think through which ones are actually relevant before answering. The runtime, not you, will render final citations, so never write citations in the answer text. Return JSON only, matching the requested schema exactly. Do not reveal chain-of-thought. Do not output <think> tags or hidden reasoning."
-        },
-        {
-          role: "user",
-          content: buildEvidencePayload(params.query, params.matches)
-        }
-      ]
-    }
-  });
+  } | null = null;
+  let parsed:
+    | {
+        responseKind: "conversational" | "grounded" | "insufficient_evidence";
+        lead: AnswerSegment;
+        bullets: AnswerSegment[];
+      }
+    | null = null;
+  let lastError: Error | null = null;
 
-  const content = sanitizeGeneratedAnswer(json.choices?.[0]?.message?.content || "");
-  const parsed = parseStructuredAnswer(content, params.matches.length);
+  for (const requireJsonMode of [true, false]) {
+    try {
+      json = await requestStructuredChatCompletion({
+        baseUrl: config.generationBaseUrl,
+        apiKey: config.generationApiKey,
+        model: config.llmModel,
+        messages,
+        requireJsonMode
+      });
+
+      const content = sanitizeGeneratedAnswer(json.choices?.[0]?.message?.content || "");
+      parsed = parseStructuredAnswer(content, params.matches.length);
+      lastError = null;
+      break;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error("structured_generation_failed");
+    }
+  }
+
+  if (!json || !parsed) {
+    throw lastError ?? new Error("structured_generation_failed");
+  }
 
   if (parsed.responseKind === "insufficient_evidence") {
     return {
