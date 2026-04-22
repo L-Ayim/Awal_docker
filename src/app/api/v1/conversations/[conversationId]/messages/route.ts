@@ -18,58 +18,6 @@ type RouteContext = {
   }>;
 };
 
-function normalizeMessage(value: string) {
-  return value.toLowerCase().replace(/\s+/g, " ").trim();
-}
-
-function isCasualMessage(value: string) {
-  const normalized = normalizeMessage(value);
-
-  if (!normalized) {
-    return false;
-  }
-
-  const exactCasualPhrases = new Set([
-    "hi",
-    "hello",
-    "hey",
-    "yo",
-    "hiya",
-    "good morning",
-    "good afternoon",
-    "good evening",
-    "how are you",
-    "how are you?",
-    "what's up",
-    "whats up",
-    "thanks",
-    "thank you",
-    "ok",
-    "okay"
-  ]);
-
-  if (exactCasualPhrases.has(normalized)) {
-    return true;
-  }
-
-  const tokenCount = normalized.split(" ").filter(Boolean).length;
-  return tokenCount <= 4 && /^(hi|hello|hey|thanks|thank you|ok|okay)\b/.test(normalized);
-}
-
-function buildCasualReply(value: string) {
-  const normalized = normalizeMessage(value);
-
-  if (/^(thanks|thank you)\b/.test(normalized)) {
-    return "You're welcome. Ask about any of the processed documents whenever you're ready.";
-  }
-
-  if (/^how are you\b/.test(normalized)) {
-    return "I'm here and ready. Ask me about the documents, and I'll answer from the evidence I have.";
-  }
-
-  return "Hi. Ask me about the documents you uploaded, and I'll answer from the evidence I have.";
-}
-
 function formatLocationLabel(params: {
   pageStart: number | null;
   pageEnd: number | null;
@@ -266,8 +214,6 @@ export async function POST(request: Request, context: RouteContext) {
       return notFound("Conversation not found.");
     }
 
-    const casualMessage = isCasualMessage(parsed.data.content);
-
     const readyDocuments = conversation.collection.documents.filter(
       (document) => document.status === "ready" && document.latestRevision?.status === "ready"
     );
@@ -299,7 +245,7 @@ export async function POST(request: Request, context: RouteContext) {
     let queryEmbedding: number[] | null = null;
     let rerankResult: Awaited<ReturnType<typeof rerankEvidence>> | null = null;
 
-    if (!casualMessage && aiConfig.hasEmbeddingProvider && candidateChunks.some((chunk) => chunk.embedding)) {
+    if (aiConfig.hasEmbeddingProvider && candidateChunks.some((chunk) => chunk.embedding)) {
       try {
         queryEmbedding = (await generateEmbeddings([parsed.data.content])).data[0]?.embedding ?? null;
       } catch {
@@ -307,16 +253,14 @@ export async function POST(request: Request, context: RouteContext) {
       }
     }
 
-    const initialMatches = casualMessage
-      ? []
-      : rankChunks({
-          query: parsed.data.content,
-          chunks: candidateChunks,
-          queryEmbedding,
-          limit: 10
-        });
+    const initialMatches = rankChunks({
+      query: parsed.data.content,
+      chunks: candidateChunks,
+      queryEmbedding,
+      limit: 10
+    });
 
-    if (!casualMessage && aiConfig.hasRerankProvider && initialMatches.length > 0) {
+    if (aiConfig.hasRerankProvider && initialMatches.length > 0) {
       try {
         rerankResult = await rerankEvidence({
           query: parsed.data.content,
@@ -350,7 +294,7 @@ export async function POST(request: Request, context: RouteContext) {
       | null = null;
     let generationFailureReason: string | null = null;
 
-    if (!casualMessage && readyDocuments.length > 0 && rankedMatches.length > 0) {
+    if (readyDocuments.length > 0 && rankedMatches.length > 0) {
       try {
         generated = await generateGroundedAnswer({
           query: parsed.data.content,
@@ -382,9 +326,7 @@ export async function POST(request: Request, context: RouteContext) {
       });
 
       const assistantContent =
-        casualMessage
-          ? buildCasualReply(parsed.data.content)
-          : readyDocuments.length === 0
+        readyDocuments.length === 0
           ? "I don't have any ready documents in this collection yet. Upload and process a document first, then ask again."
           : rankedMatches.length === 0
             ? "I couldn't find grounded evidence for that question in the documents I have ready right now."
@@ -406,9 +348,7 @@ export async function POST(request: Request, context: RouteContext) {
                 });
 
       const assistantState =
-        casualMessage
-          ? "grounded_answer"
-          : readyDocuments.length === 0
+        readyDocuments.length === 0
           ? "ingestion_pending"
           : rankedMatches.length === 0
             ? "insufficient_evidence"
@@ -431,9 +371,7 @@ export async function POST(request: Request, context: RouteContext) {
             generated?.modelName ??
             (aiConfig.hasGenerationProvider ? aiConfig.llmModel : null),
           refusalReason:
-            casualMessage
-              ? null
-            : readyDocuments.length === 0
+            readyDocuments.length === 0
               ? "no_ready_documents"
               : rankedMatches.length === 0
                 ? "no_matching_evidence"

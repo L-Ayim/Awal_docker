@@ -70,6 +70,21 @@ export function getAiRuntimeConfig() {
 }
 
 function buildEvidencePayload(query: string, matches: EvidenceMatch[]) {
+  if (matches.length === 0) {
+    return [
+      "Question:",
+      query,
+      "",
+      "Evidence:",
+      "(none)",
+      "",
+      "Instructions:",
+      "- If the user is making casual conversation such as a greeting, a thank-you, or a simple check-in, reply naturally in one short sentence.",
+      "- If the user is asking for information that should come from documents, respond with exactly: INSUFFICIENT_EVIDENCE",
+      "- Do not invent document facts."
+    ].join("\n");
+  }
+
   const evidence = matches
     .map((match, index) => {
       const location = [
@@ -234,7 +249,7 @@ export async function generateGroundedAnswer(params: {
         {
           role: "system",
           content:
-            "You are Awal. Answer only from supplied evidence. Give a direct answer first, then short supporting bullets. Prefer the most relevant document instead of broad keyword-matched lists. Every factual statement must include an inline citation with evidence id and page or line information when available, for example [1, page 3, lines 10-16]. If the evidence is insufficient, return exactly INSUFFICIENT_EVIDENCE. Do not reveal chain-of-thought. Do not output <think> tags or hidden reasoning."
+            "You are Awal. When evidence is supplied, answer only from that evidence. Give a direct answer first, then short supporting bullets. Prefer the most relevant document instead of broad keyword-matched lists. Every factual statement must include an inline citation with evidence id and page or line information when available, for example [1, page 3, lines 10-16]. If no evidence is supplied and the user is only making casual conversation, reply naturally in one short sentence. If no evidence is supplied and the user is asking for document-backed facts, return exactly INSUFFICIENT_EVIDENCE. Do not reveal chain-of-thought. Do not output <think> tags or hidden reasoning."
         },
         {
           role: "user",
