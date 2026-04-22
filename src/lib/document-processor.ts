@@ -115,7 +115,7 @@ async function extractWithRemoteDoclingViaCurl(params: {
     "-F",
     `title=${params.title}`,
     "-F",
-    `ocrMode=${params.ocrMode}`
+    `ocr_mode=${params.ocrMode}`
   ];
 
   const { stdout, stderr } = await execFileAsync("curl.exe", args, {
@@ -164,7 +164,7 @@ export async function extractWithRemoteDocling(params: {
       })
     );
     formData.set("title", params.title);
-    formData.set("ocrMode", ocrMode);
+    formData.set("ocr_mode", ocrMode);
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), config.timeoutMs);
