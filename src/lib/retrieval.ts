@@ -72,11 +72,64 @@ function normalize(text: string) {
   return text.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
+const STOP_WORDS = new Set([
+  "a",
+  "about",
+  "an",
+  "and",
+  "are",
+  "can",
+  "do",
+  "does",
+  "for",
+  "give",
+  "hello",
+  "help",
+  "hey",
+  "hi",
+  "how",
+  "i",
+  "if",
+  "in",
+  "is",
+  "it",
+  "me",
+  "my",
+  "of",
+  "ok",
+  "okay",
+  "on",
+  "or",
+  "please",
+  "say",
+  "tell",
+  "thanks",
+  "thank",
+  "that",
+  "the",
+  "their",
+  "there",
+  "they",
+  "this",
+  "to",
+  "us",
+  "using",
+  "we",
+  "what",
+  "when",
+  "where",
+  "which",
+  "who",
+  "why",
+  "you",
+  "your"
+]);
+
 function tokenize(text: string) {
   return normalize(text)
     .split(/[^a-z0-9]+/)
     .map((token) => token.trim())
-    .filter((token) => token.length >= 3);
+    .filter((token) => token.length >= 3 && !STOP_WORDS.has(token));
 }
 
 function countAlphaNumeric(text: string) {
@@ -138,6 +191,11 @@ export function rankChunks(params: {
 }) {
   const normalizedQuery = normalize(params.query);
   const queryTokens = tokenize(params.query);
+
+  if (queryTokens.length === 0) {
+    return [];
+  }
+
   const limit = params.limit ?? 8;
   const ranked = params.chunks
     .filter((chunk) => !isWeakChunkText(chunk.text))
