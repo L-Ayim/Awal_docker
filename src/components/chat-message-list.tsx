@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import type { ChatCitation, ChatMessage, ChatSession } from "@/types/chat";
 
 type ChatMessageListProps = {
@@ -53,7 +54,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
             ? "You"
             : "System"}
       </span>
-      <p>{message.content}</p>
+      <p className="chat-message-content">{message.content}</p>
       {message.role === "assistant" && citations.length > 0 ? (
         <div className="chat-references">
           <span className="chat-section-label">References</span>
@@ -82,6 +83,18 @@ export function ChatMessageList({
   isBootstrapping,
   error
 }: ChatMessageListProps) {
+  const threadRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const thread = threadRef.current;
+
+    if (!thread) {
+      return;
+    }
+
+    thread.scrollTop = thread.scrollHeight;
+  }, [session?.id, session?.messages.length]);
+
   if (isBootstrapping) {
     return (
       <div className="chat-thread empty">
@@ -115,7 +128,7 @@ export function ChatMessageList({
   }
 
   return (
-    <div className="chat-thread">
+    <div ref={threadRef} className="chat-thread">
       {session.messages.map((message) => (
         <MessageBubble key={message.id} message={message} />
       ))}

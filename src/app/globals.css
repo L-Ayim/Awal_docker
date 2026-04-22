@@ -23,7 +23,7 @@ html,
 body {
   margin: 0;
   padding: 0;
-  min-height: 100%;
+  height: 100%;
   background: var(--bg);
   color: var(--text);
   font-family: "Segoe UI", system-ui, sans-serif;
@@ -48,6 +48,7 @@ body {
 
 body {
   min-height: 100vh;
+  overflow: hidden;
   font-family: var(--font-poppins), "Segoe UI", system-ui, sans-serif;
   background:
     radial-gradient(circle at top left, rgba(16, 82, 224, 0.08), transparent 24rem),
@@ -68,12 +69,15 @@ h1 {
   max-width: 1320px;
   margin: 0 auto;
   padding: 24px 16px 40px;
+  height: 100dvh;
+  overflow: hidden;
 }
 
 .sidebar-shell {
   display: grid;
   grid-template-columns: 280px 1fr;
-  min-height: calc(100vh - 64px);
+  height: 100%;
+  min-height: 0;
   border-radius: 18px;
   overflow: hidden;
   background: transparent;
@@ -89,7 +93,8 @@ h1 {
   border: 1px solid rgba(217, 226, 236, 0.85);
   box-shadow: var(--shadow);
   border-radius: 24px;
-  min-height: calc(100vh - 64px);
+  min-height: 0;
+  overflow: hidden;
 }
 
 .sidebar-mobile-open {
@@ -178,6 +183,9 @@ h1 {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 4px;
 }
 
 .sidebar-session-button {
@@ -296,7 +304,7 @@ h1 {
 .chat-shell {
   display: grid;
   grid-template-rows: auto 1fr auto;
-  min-height: calc(100vh - 64px);
+  min-height: 0;
   background: var(--panel);
   border: 1px solid rgba(217, 226, 236, 0.85);
   box-shadow: var(--shadow);
@@ -336,6 +344,7 @@ h1 {
   flex-direction: column;
   gap: 14px;
   padding: 20px;
+  min-height: 0;
   overflow: auto;
   background:
     radial-gradient(circle at top, rgba(16, 82, 224, 0.05), transparent 22rem),
@@ -355,6 +364,11 @@ h1 {
   border: 1px solid var(--border);
   line-height: 1.55;
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+}
+
+.chat-message-content {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .chat-bubble.assistant {
@@ -534,11 +548,13 @@ h1 {
 @media (max-width: 640px) {
   .app-shell {
     padding: 0;
+    height: 100dvh;
   }
 
   .sidebar-shell {
     grid-template-columns: 1fr;
     gap: 0;
+    height: 100%;
   }
 
   .sidebar {
@@ -553,7 +569,7 @@ h1 {
   }
 
   .chat-shell {
-    min-height: 100vh;
+    min-height: 100dvh;
     border-radius: 0;
     border-left: 0;
     border-right: 0;

@@ -111,10 +111,12 @@ function buildEvidencePayload(query: string, matches: EvidenceMatch[]) {
     "Instructions:",
     "- Answer only from the evidence.",
     "- If the evidence is insufficient, respond with exactly: INSUFFICIENT_EVIDENCE",
-    "- Keep the answer short: 2 to 4 sentences maximum.",
-    "- Write in a friendly, direct tone.",
+    "- Keep the answer short: one direct lead sentence, then 2 to 4 short bullet points maximum.",
+    "- Write in a friendly, direct tone, but do not sound robotic.",
+    "- Prefer the most directly relevant document instead of listing many loosely related documents.",
     "- When the evidence spans multiple documents, synthesize it into one answer instead of answering from only one source.",
-    "- If you answer, cite evidence ids like [1] or [2] inline.",
+    "- Every factual sentence or bullet must cite evidence inline using this style: [1, page 2, lines 4-9].",
+    "- Do not dump raw snippets or quote long passages unless necessary.",
     "- Do not use outside knowledge."
   ].join("\n");
 }
@@ -232,7 +234,7 @@ export async function generateGroundedAnswer(params: {
         {
           role: "system",
           content:
-            "You are Awal. Answer only from supplied evidence. Keep answers brief, user-facing, and friendly. Lead with the answer, avoid robotic phrasing, and keep it to 2 to 4 sentences. If the evidence is insufficient, return exactly INSUFFICIENT_EVIDENCE. Do not reveal chain-of-thought. Do not output <think> tags or hidden reasoning."
+            "You are Awal. Answer only from supplied evidence. Give a direct answer first, then short supporting bullets. Prefer the most relevant document instead of broad keyword-matched lists. Every factual statement must include an inline citation with evidence id and page or line information when available, for example [1, page 3, lines 10-16]. If the evidence is insufficient, return exactly INSUFFICIENT_EVIDENCE. Do not reveal chain-of-thought. Do not output <think> tags or hidden reasoning."
         },
         {
           role: "user",

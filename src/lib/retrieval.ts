@@ -20,11 +20,17 @@ type ChunkCandidate = {
 type RankedChunk = ChunkCandidate & {
   denseScore: number | null;
   lexicalScore: number;
+  titleScore: number;
+  phraseScore: number;
   hybridScore: number;
   rerankScore: number | null;
 };
 
-function capPerDocument<T extends { documentId: string }>(items: T[], limit: number, perDocument: number) {
+function capPerDocument<T extends { documentId: string }>(
+  items: T[],
+  limit: number,
+  perDocument: number
+) {
   const counts = new Map<string, number>();
   const selected: T[] = [];
 
@@ -73,6 +79,35 @@ function tokenize(text: string) {
     .filter((token) => token.length >= 3);
 }
 
+function countAlphaNumeric(text: string) {
+  return (text.match(/[a-z0-9]/gi) ?? []).length;
+}
+
+function isWeakChunkText(text: string) {
+  const withoutImageMarkers = text.replace(/<!--\s*image\s*-->/gi, " ");
+  const alphaNumericChars = countAlphaNumeric(withoutImageMarkers);
+  const imageMarkers = (text.match(/<!--\s*image\s*-->/gi) ?? []).length;
+
+  return alphaNumericChars < 120 || (imageMarkers > 0 && alphaNumericChars < 220);
+}
+
+function computeTokenOverlapScore(queryTokens: string[], candidateText: string) {
+  if (queryTokens.length === 0) {
+    return 0;
+  }
+
+  const candidateTokens = new Set(tokenize(candidateText));
+  let overlap = 0;
+
+  for (const token of queryTokens) {
+    if (candidateTokens.has(token)) {
+      overlap += 1;
+    }
+  }
+
+  return overlap / queryTokens.length;
+}
+
 function cosineSimilarity(left: number[], right: number[]) {
   if (left.length === 0 || right.length === 0 || left.length !== right.length) {
     return 0;
@@ -101,9 +136,11 @@ export function rankChunks(params: {
   queryEmbedding?: number[] | null;
   limit?: number;
 }) {
+  const normalizedQuery = normalize(params.query);
   const queryTokens = tokenize(params.query);
   const limit = params.limit ?? 8;
   const ranked = params.chunks
+    .filter((chunk) => !isWeakChunkText(chunk.text))
     .map((chunk) => {
       const haystack = normalize(chunk.text);
       let lexicalScore = 0;
@@ -115,23 +152,39 @@ export function rankChunks(params: {
       }
 
       const normalizedLexical = queryTokens.length > 0 ? lexicalScore / queryTokens.length : 0;
+      const titleScore = computeTokenOverlapScore(queryTokens, chunk.documentTitle);
+      const phraseScore =
+        normalizedQuery.length >= 10 &&
+        (haystack.includes(normalizedQuery) || normalize(chunk.documentTitle).includes(normalizedQuery))
+          ? 1
+          : 0;
       const denseScore =
         params.queryEmbedding && chunk.embedding
           ? cosineSimilarity(params.queryEmbedding, chunk.embedding)
           : null;
       const hybridScore =
-        normalizedLexical * (denseScore !== null ? 0.45 : 0.85) +
-        Math.max(denseScore ?? 0, 0) * (denseScore !== null ? 0.55 : 0.15);
+        normalizedLexical * (denseScore !== null ? 0.35 : 0.55) +
+        titleScore * 0.3 +
+        phraseScore * 0.25 +
+        Math.max(denseScore ?? 0, 0) * (denseScore !== null ? 0.1 : 0);
 
       return {
         ...chunk,
         lexicalScore,
+        titleScore,
+        phraseScore,
         denseScore,
         hybridScore,
         rerankScore: null
       } satisfies RankedChunk;
     })
-    .filter((chunk) => chunk.lexicalScore > 0 || (chunk.denseScore ?? 0) >= 0.35)
+    .filter(
+      (chunk) =>
+        chunk.lexicalScore > 0 ||
+        chunk.titleScore >= 0.34 ||
+        chunk.phraseScore > 0 ||
+        (chunk.denseScore ?? 0) >= 0.35
+    )
     .sort((left, right) => right.hybridScore - left.hybridScore);
 
   return capPerDocument(ranked, limit, 2);
@@ -177,9 +230,13 @@ export function composeGroundedAnswer(params: {
     lineEnd: number | null;
   }>;
 }) {
-  const snippets = params.matches.map((match, index) => {
-    const excerpt =
-      match.text.length > 260 ? `${match.text.slice(0, 257).trimEnd()}...` : match.text;
+  const snippets = params.matches.slice(0, 3).map((match, index) => {
+    const cleanedText = match.text
+      .replace(/<!--\s*image\s*-->/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    const firstSentence = cleanedText.split(/(?<=[.!?])\s+/).find(Boolean) ?? cleanedText;
+    const excerpt = firstSentence.slice(0, 240).trimEnd();
     const locations = [
       match.pageStart !== null
         ? match.pageEnd !== null && match.pageEnd !== match.pageStart
@@ -200,13 +257,12 @@ export function composeGroundedAnswer(params: {
       .filter(Boolean)
       .join(", ");
 
-    return `${index + 1}. ${match.documentTitle}${locations ? ` (${locations})` : ""}: ${excerpt}`;
+    return `- ${excerpt}${excerpt.endsWith(".") ? "" : "."} [${index + 1}]${locations ? ` (${locations})` : ""}`;
   });
 
   return [
-    "Here’s the most relevant material I found in the processed documents.",
+    "I found grounded evidence in the processed documents, but the answer generator was unavailable, so here are the strongest supporting points.",
     "",
-    "Grounded snippets:",
     ...snippets
   ].join("\n");
 }
