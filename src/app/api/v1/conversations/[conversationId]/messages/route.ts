@@ -18,6 +18,61 @@ type RouteContext = {
   }>;
 };
 
+function buildInlineCitationLabel(params: {
+  documentTitle: string;
+  pageStart: number | null;
+  pageEnd: number | null;
+  lineStart: number | null;
+  lineEnd: number | null;
+  paragraphStart: number | null;
+  paragraphEnd: number | null;
+}) {
+  const location = [
+    params.pageStart !== null
+      ? params.pageEnd !== null && params.pageEnd !== params.pageStart
+        ? `pages ${params.pageStart}-${params.pageEnd}`
+        : `page ${params.pageStart}`
+      : null,
+    params.lineStart !== null
+      ? params.lineEnd !== null && params.lineEnd !== params.lineStart
+        ? `lines ${params.lineStart}-${params.lineEnd}`
+        : `line ${params.lineStart}`
+      : null,
+    params.paragraphStart !== null
+      ? params.paragraphEnd !== null && params.paragraphEnd !== params.paragraphStart
+        ? `paragraphs ${params.paragraphStart}-${params.paragraphEnd}`
+        : `paragraph ${params.paragraphStart}`
+      : null
+  ]
+    .filter(Boolean)
+    .join(", ");
+
+  return `[${params.documentTitle}${location ? `, ${location}` : ""}]`;
+}
+
+function normalizeInlineCitations(
+  content: string,
+  matches: Array<{
+    documentTitle: string;
+    pageStart: number | null;
+    pageEnd: number | null;
+    paragraphStart: number | null;
+    paragraphEnd: number | null;
+    lineStart: number | null;
+    lineEnd: number | null;
+  }>
+) {
+  return content.replace(/\[(\d+)(?:[^\]]*)\]/g, (fullMatch, rawIndex) => {
+    const index = Number.parseInt(rawIndex, 10);
+
+    if (!Number.isFinite(index) || index < 1 || index > matches.length) {
+      return fullMatch;
+    }
+
+    return buildInlineCitationLabel(matches[index - 1]);
+  });
+}
+
 function formatLocationLabel(params: {
   pageStart: number | null;
   pageEnd: number | null;
@@ -331,7 +386,18 @@ export async function POST(request: Request, context: RouteContext) {
           : rankedMatches.length === 0
             ? "I couldn't find grounded evidence for that question in the documents I have ready right now."
             : generated?.provider === "vast-openai-compatible"
-              ? generated.answer
+              ? normalizeInlineCitations(
+                  generated.answer,
+                  rankedMatches.map((match) => ({
+                    documentTitle: match.documentTitle,
+                    pageStart: match.pageStart,
+                    pageEnd: match.pageEnd,
+                    paragraphStart: match.paragraphStart,
+                    paragraphEnd: match.paragraphEnd,
+                    lineStart: match.lineStart,
+                    lineEnd: match.lineEnd
+                  }))
+                )
               : composeGroundedAnswer({
                   query: parsed.data.content,
                   matches: rankedMatches.map((match) => ({
