@@ -32,21 +32,26 @@ type GenerationResult = {
   provider: "vast-openai-compatible" | "local-fallback";
 };
 
-const structuredAnswerSchema = z.object({
-  responseKind: z.enum(["conversational", "grounded", "insufficient_evidence"]),
-  lead: z.object({
+const answerSegmentSchema = z.union([
+  z.string().trim().min(1).max(1200),
+  z.object({
     text: z.string().trim().min(1).max(1200),
     evidenceIds: z.array(z.number().int().positive()).max(5).default([])
-  }),
-  bullets: z
-    .array(
-      z.object({
-        text: z.string().trim().min(1).max(600),
-        evidenceIds: z.array(z.number().int().positive()).max(5).default([])
-      })
-    )
-    .max(4)
-    .default([])
+  })
+]);
+
+const bulletSegmentSchema = z.union([
+  z.string().trim().min(1).max(600),
+  z.object({
+    text: z.string().trim().min(1).max(600),
+    evidenceIds: z.array(z.number().int().positive()).max(5).default([])
+  })
+]);
+
+const structuredAnswerSchema = z.object({
+  responseKind: z.enum(["conversational", "grounded", "insufficient_evidence"]),
+  lead: answerSegmentSchema,
+  bullets: z.array(bulletSegmentSchema).max(4).default([])
 });
 
 function trimTrailingSlash(value: string) {
@@ -202,19 +207,29 @@ function normalizeEvidenceIds(evidenceIds: number[], matchCount: number) {
   );
 }
 
+function normalizeSegment(
+  segment: string | { text: string; evidenceIds?: number[] },
+  matchCount: number
+): AnswerSegment {
+  if (typeof segment === "string") {
+    return {
+      text: segment.trim(),
+      evidenceIds: []
+    };
+  }
+
+  return {
+    text: segment.text.trim(),
+    evidenceIds: normalizeEvidenceIds(segment.evidenceIds ?? [], matchCount)
+  };
+}
+
 function parseStructuredAnswer(content: string, matchCount: number) {
   const raw = JSON.parse(extractJsonObject(content));
   const parsed = structuredAnswerSchema.parse(raw);
 
-  const lead: AnswerSegment = {
-    text: parsed.lead.text.trim(),
-    evidenceIds: normalizeEvidenceIds(parsed.lead.evidenceIds, matchCount)
-  };
-
-  const bullets = parsed.bullets.map((bullet) => ({
-    text: bullet.text.trim(),
-    evidenceIds: normalizeEvidenceIds(bullet.evidenceIds, matchCount)
-  }));
+  const lead = normalizeSegment(parsed.lead, matchCount);
+  const bullets = parsed.bullets.map((bullet) => normalizeSegment(bullet, matchCount));
 
   if (parsed.responseKind === "conversational") {
     return {

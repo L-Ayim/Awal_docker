@@ -140,8 +140,20 @@ function isWeakChunkText(text: string) {
   const withoutImageMarkers = text.replace(/<!--\s*image\s*-->/gi, " ");
   const alphaNumericChars = countAlphaNumeric(withoutImageMarkers);
   const imageMarkers = (text.match(/<!--\s*image\s*-->/gi) ?? []).length;
+  const normalizedText = normalize(withoutImageMarkers);
+  const looksLikeRelatedDocsBoilerplate =
+    normalizedText.includes("the following policies and procedures are relevant to this document");
+  const looksLikeDocumentMetadataTable =
+    normalizedText.includes("document id") &&
+    normalizedText.includes("document name") &&
+    normalizedText.includes("document owner");
 
-  return alphaNumericChars < 120 || (imageMarkers > 0 && alphaNumericChars < 220);
+  return (
+    alphaNumericChars < 120 ||
+    (imageMarkers > 0 && alphaNumericChars < 220) ||
+    looksLikeRelatedDocsBoilerplate ||
+    looksLikeDocumentMetadataTable
+  );
 }
 
 function computeTokenOverlapScore(queryTokens: string[], candidateText: string) {
