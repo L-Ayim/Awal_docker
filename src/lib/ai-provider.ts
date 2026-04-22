@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 type EvidenceMatch = {
   text: string;
   chunkIndex: number;
@@ -10,6 +12,11 @@ type EvidenceMatch = {
   lineEnd: number | null;
 };
 
+type AnswerSegment = {
+  text: string;
+  evidenceIds: number[];
+};
+
 type ServiceConfig = {
   configured: boolean;
   baseUrl: string | null;
@@ -17,11 +24,30 @@ type ServiceConfig = {
 };
 
 type GenerationResult = {
-  answer: string;
+  responseKind: "conversational" | "grounded" | "insufficient_evidence";
+  lead: AnswerSegment;
+  bullets: AnswerSegment[];
   answerState: "grounded_answer" | "insufficient_evidence";
   modelName: string | null;
   provider: "vast-openai-compatible" | "local-fallback";
 };
+
+const structuredAnswerSchema = z.object({
+  responseKind: z.enum(["conversational", "grounded", "insufficient_evidence"]),
+  lead: z.object({
+    text: z.string().trim().min(1).max(1200),
+    evidenceIds: z.array(z.number().int().positive()).max(5).default([])
+  }),
+  bullets: z
+    .array(
+      z.object({
+        text: z.string().trim().min(1).max(600),
+        evidenceIds: z.array(z.number().int().positive()).max(5).default([])
+      })
+    )
+    .max(4)
+    .default([])
+});
 
 function trimTrailingSlash(value: string) {
   return value.endsWith("/") ? value.slice(0, -1) : value;
@@ -75,13 +101,20 @@ function buildEvidencePayload(query: string, matches: EvidenceMatch[]) {
       "Question:",
       query,
       "",
-      "Evidence:",
+      "Evidence candidates:",
       "(none)",
       "",
-      "Instructions:",
-      "- If the user is making casual conversation such as a greeting, a thank-you, or a simple check-in, reply naturally in one short sentence.",
-      "- If the user is asking for information that should come from documents, respond with exactly: INSUFFICIENT_EVIDENCE",
-      "- Do not invent document facts."
+      "Return JSON with this exact shape:",
+      '{"responseKind":"conversational|grounded|insufficient_evidence","lead":{"text":"...","evidenceIds":[]},"bullets":[{"text":"...","evidenceIds":[1]}]}',
+      "",
+      "Rules:",
+      "- Decide the user's intent yourself.",
+      "- If the user is making casual conversation such as a greeting, a thank-you, or a simple check-in, use responseKind conversational.",
+      "- If the user is asking for document-backed facts and there is no usable evidence, use responseKind insufficient_evidence.",
+      "- Do not invent document facts.",
+      "- Do not include citations in the text. Put only evidence ids in evidenceIds arrays.",
+      "- If responseKind is conversational or insufficient_evidence, evidenceIds must be empty arrays.",
+      "- Return JSON only."
     ].join("\n");
   }
 
@@ -120,19 +153,24 @@ function buildEvidencePayload(query: string, matches: EvidenceMatch[]) {
     "Question:",
     query,
     "",
-    "Evidence:",
+    "Evidence candidates:",
     evidence,
     "",
-    "Instructions:",
-    "- Answer only from the evidence.",
-    "- If the evidence is insufficient, respond with exactly: INSUFFICIENT_EVIDENCE",
-    "- Keep the answer short: one direct lead sentence, then 2 to 4 short bullet points maximum.",
-    "- Write in a friendly, direct tone, but do not sound robotic.",
-    "- Prefer the most directly relevant document instead of listing many loosely related documents.",
-    "- When the evidence spans multiple documents, synthesize it into one answer instead of answering from only one source.",
-    "- Every factual sentence or bullet must cite evidence inline using the document title plus location, for example: [OmniBSIC Bank Change Management Procedure.pdf, page 2, lines 4-9].",
-    "- Do not dump raw snippets or quote long passages unless necessary.",
-    "- Do not use outside knowledge."
+    "Return JSON with this exact shape:",
+    '{"responseKind":"conversational|grounded|insufficient_evidence","lead":{"text":"...","evidenceIds":[1]},"bullets":[{"text":"...","evidenceIds":[1,2]}]}',
+    "",
+    "Rules:",
+    "- Read the question and decide whether the evidence is actually needed to answer it.",
+    "- If the user is making casual conversation, use responseKind conversational and answer naturally in one short sentence.",
+    "- If the user is asking for document-backed information, think through which evidence candidates are truly relevant before answering.",
+    "- Use responseKind grounded only when the supplied evidence is enough to support the answer.",
+    "- Use responseKind insufficient_evidence when the evidence is missing, weak, or not directly on point.",
+    "- The lead should be one direct sentence.",
+    "- Bullets are optional, but use at most 3 short bullets.",
+    "- Do not include citations in the text. Put only evidence ids in evidenceIds arrays.",
+    "- Do not mention chunk numbers, candidate numbers, or retrieval mechanics.",
+    "- Do not use outside knowledge.",
+    "- Return JSON only."
   ].join("\n");
 }
 
@@ -141,6 +179,78 @@ function sanitizeGeneratedAnswer(content: string) {
     .replace(/<think>[\s\S]*?<\/think>/gi, "")
     .replace(/^\s*think\s*[\r\n]+/gi, "")
     .trim();
+}
+
+function extractJsonObject(content: string) {
+  const start = content.indexOf("{");
+  const end = content.lastIndexOf("}");
+
+  if (start < 0 || end < start) {
+    throw new Error("Model did not return a JSON object.");
+  }
+
+  return content.slice(start, end + 1);
+}
+
+function normalizeEvidenceIds(evidenceIds: number[], matchCount: number) {
+  return Array.from(
+    new Set(
+      evidenceIds.filter(
+        (value) => Number.isInteger(value) && value >= 1 && value <= matchCount
+      )
+    )
+  );
+}
+
+function parseStructuredAnswer(content: string, matchCount: number) {
+  const raw = JSON.parse(extractJsonObject(content));
+  const parsed = structuredAnswerSchema.parse(raw);
+
+  const lead: AnswerSegment = {
+    text: parsed.lead.text.trim(),
+    evidenceIds: normalizeEvidenceIds(parsed.lead.evidenceIds, matchCount)
+  };
+
+  const bullets = parsed.bullets.map((bullet) => ({
+    text: bullet.text.trim(),
+    evidenceIds: normalizeEvidenceIds(bullet.evidenceIds, matchCount)
+  }));
+
+  if (parsed.responseKind === "conversational") {
+    return {
+      responseKind: parsed.responseKind,
+      lead: { ...lead, evidenceIds: [] },
+      bullets: []
+    };
+  }
+
+  if (parsed.responseKind !== "grounded") {
+    return {
+      responseKind: parsed.responseKind,
+      lead: { ...lead, evidenceIds: [] },
+      bullets: bullets.map((bullet) => ({ ...bullet, evidenceIds: [] }))
+    };
+  }
+
+  const groundedEvidenceCount =
+    lead.evidenceIds.length + bullets.reduce((sum, bullet) => sum + bullet.evidenceIds.length, 0);
+
+  if (groundedEvidenceCount === 0) {
+    return {
+      responseKind: "insufficient_evidence" as const,
+      lead: {
+        text: "I couldn't find enough grounded evidence in the processed documents to answer that confidently.",
+        evidenceIds: []
+      },
+      bullets: []
+    };
+  }
+
+  return {
+    responseKind: parsed.responseKind,
+    lead,
+    bullets
+  };
 }
 
 async function postJson<TResponse>(
@@ -226,7 +336,12 @@ export async function generateGroundedAnswer(params: {
 
   if (!config.hasGenerationProvider || !config.generationBaseUrl) {
     return {
-      answer: "",
+      responseKind: "insufficient_evidence",
+      lead: {
+        text: "",
+        evidenceIds: []
+      },
+      bullets: [],
       answerState: "insufficient_evidence",
       modelName: null,
       provider: "local-fallback"
@@ -249,7 +364,7 @@ export async function generateGroundedAnswer(params: {
         {
           role: "system",
           content:
-            "You are Awal. When evidence is supplied, answer only from that evidence. Give a direct answer first, then short supporting bullets. Prefer the most relevant document instead of broad keyword-matched lists. Every factual statement must include an inline citation with document title and page or line information when available, for example [OmniBSIC Bank Change Management Procedure.pdf, page 3, lines 10-16]. Never use chunk numbers in the final answer. If no evidence is supplied and the user is only making casual conversation, reply naturally in one short sentence. If no evidence is supplied and the user is asking for document-backed facts, return exactly INSUFFICIENT_EVIDENCE. Do not reveal chain-of-thought. Do not output <think> tags or hidden reasoning."
+            "You are Awal. Decide whether the user needs a conversational reply, a grounded document answer, or an insufficient-evidence response. When evidence candidates are supplied, think through which ones are actually relevant before answering. The runtime, not you, will render final citations, so never write citations in the answer text. Return JSON only, matching the requested schema exactly. Do not reveal chain-of-thought. Do not output <think> tags or hidden reasoning."
         },
         {
           role: "user",
@@ -260,11 +375,17 @@ export async function generateGroundedAnswer(params: {
   });
 
   const content = sanitizeGeneratedAnswer(json.choices?.[0]?.message?.content || "");
+  const parsed = parseStructuredAnswer(content, params.matches.length);
 
-  if (!content || content === "INSUFFICIENT_EVIDENCE") {
+  if (parsed.responseKind === "insufficient_evidence") {
     return {
-      answer:
+      responseKind: "insufficient_evidence",
+      lead: {
+        text:
         "I couldn't find enough grounded evidence in the processed documents to answer that confidently.",
+        evidenceIds: []
+      },
+      bullets: [],
       answerState: "insufficient_evidence",
       modelName: json.model || config.llmModel,
       provider: "vast-openai-compatible"
@@ -272,8 +393,13 @@ export async function generateGroundedAnswer(params: {
   }
 
   return {
-    answer: content,
-    answerState: "grounded_answer",
+    responseKind: parsed.responseKind,
+    lead: parsed.lead,
+    bullets: parsed.bullets,
+    answerState:
+      parsed.responseKind === "grounded" || parsed.responseKind === "conversational"
+        ? "grounded_answer"
+        : "insufficient_evidence",
     modelName: json.model || config.llmModel,
     provider: "vast-openai-compatible"
   };
