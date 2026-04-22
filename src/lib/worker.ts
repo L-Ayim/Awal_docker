@@ -4,6 +4,7 @@ import { generateEmbeddings, getAiRuntimeConfig } from "@/lib/ai-provider";
 import { chunkSectionBodies } from "@/lib/chunking";
 import { extractWithRemoteDocling, shouldUseDocling } from "@/lib/document-processor";
 import { detectParser, parseDocumentText } from "@/lib/ingestion-parser";
+import { buildPdfCitationIndex, locateChunkInPdf } from "@/lib/pdf-citations";
 
 async function loadRevisionText(storageUri: string | null) {
   if (!storageUri || !storageUri.startsWith("file://")) {
@@ -113,6 +114,9 @@ export async function processQueuedIngestionJob() {
         status: "processing"
       }
     });
+  }, {
+    maxWait: 10_000,
+    timeout: 120_000
   });
 
   try {
@@ -128,6 +132,10 @@ export async function processQueuedIngestionJob() {
     }
 
     const chunkEntries = chunkSectionBodies(parsed.sections);
+    const citationIndex = await buildPdfCitationIndex(queuedJob.documentRevision.storageUri);
+    const chunkReferences = chunkEntries.map((chunk) =>
+      locateChunkInPdf(chunk.text, citationIndex)
+    );
     const aiConfig = getAiRuntimeConfig();
     let embeddingPayload: Awaited<ReturnType<typeof generateEmbeddings>> | null = null;
     let embeddingFailureReason: string | null = null;
@@ -141,111 +149,133 @@ export async function processQueuedIngestionJob() {
       }
     }
 
-    await prisma.$transaction(async (tx) => {
-      await tx.chunk.deleteMany({
-        where: {
-          documentRevisionId: queuedJob.documentRevisionId
-        }
-      });
-
-      await tx.documentSection.deleteMany({
-        where: {
-          documentRevisionId: queuedJob.documentRevisionId
-        }
-      });
-
-      const sectionIdByPath = new Map<string, string>();
-
-      for (const section of parsed.sections) {
-        const createdSection = await tx.documentSection.create({
-          data: {
-            documentRevisionId: queuedJob.documentRevisionId,
-            sectionPath: section.sectionPath,
-            heading: section.heading,
-            ordinal: section.ordinal
-          }
-        });
-
-        sectionIdByPath.set(section.sectionPath, createdSection.id);
+    await prisma.chunk.deleteMany({
+      where: {
+        documentRevisionId: queuedJob.documentRevisionId
       }
+    });
 
-      const createdChunks: Array<{
-        id: string;
-        chunkIndex: number;
-      }> = [];
-
-      for (const [index, chunk] of chunkEntries.entries()) {
-        const createdChunk = await tx.chunk.create({
-          data: {
-            documentRevisionId: queuedJob.documentRevisionId,
-            sectionId: sectionIdByPath.get(chunk.sectionPath) ?? null,
-            chunkIndex: index,
-            text: chunk.text,
-            tokenCount: chunk.text.split(/\s+/).filter(Boolean).length,
-            charCount: chunk.text.length,
-            searchText: chunk.text.toLowerCase()
-          }
-        });
-
-        createdChunks.push({
-          id: createdChunk.id,
-          chunkIndex: index
-        });
+    await prisma.documentSection.deleteMany({
+      where: {
+        documentRevisionId: queuedJob.documentRevisionId
       }
+    });
 
-      if (embeddingPayload) {
-        for (const createdChunk of createdChunks) {
-          const vector = embeddingPayload.data.find(
-            (entry) => entry.index === createdChunk.chunkIndex
-          );
+    const sectionIdByPath = new Map<string, string>();
 
-          if (!vector) {
-            continue;
-          }
-
-          await tx.chunkEmbedding.create({
-            data: {
-              chunkId: createdChunk.id,
-              modelName: embeddingPayload.model,
-              dimensions: embeddingPayload.dimensions,
-              vectorJson: vector.embedding
-            }
-          });
-        }
-      }
-
-      await tx.documentRevision.update({
-        where: { id: queuedJob.documentRevisionId },
+    for (const section of parsed.sections) {
+      const createdSection = await prisma.documentSection.create({
         data: {
-          status: "ready",
-          extractionQuality: "medium",
-          reviewFlag: false,
-          qualityNotes:
-            `${parsed.qualityNotes} Generated ${chunkEntries.length} chunks with the ${parsed.parser} parser.` +
-            (embeddingPayload
-              ? ` Embedded ${embeddingPayload.data.length} chunk(s) with ${embeddingPayload.model}.`
-              : embeddingFailureReason
-                ? ` Embedding skipped: ${embeddingFailureReason}.`
+          documentRevisionId: queuedJob.documentRevisionId,
+          sectionPath: section.sectionPath,
+          heading: section.heading,
+          ordinal: section.ordinal
+        }
+      });
+
+      sectionIdByPath.set(section.sectionPath, createdSection.id);
+    }
+
+    const createdChunks: Array<{
+      id: string;
+      chunkIndex: number;
+    }> = [];
+
+    for (const [index, chunk] of chunkEntries.entries()) {
+      const reference = chunkReferences[index];
+      const createdChunk = await prisma.chunk.create({
+        data: {
+          documentRevisionId: queuedJob.documentRevisionId,
+          sectionId: sectionIdByPath.get(chunk.sectionPath) ?? null,
+          chunkIndex: index,
+          text: chunk.text,
+          tokenCount: chunk.text.split(/\s+/).filter(Boolean).length,
+          charCount: chunk.text.length,
+          pageStart: reference?.pageStart ?? null,
+          pageEnd: reference?.pageEnd ?? null,
+          paragraphStart: reference?.paragraphStart ?? null,
+          paragraphEnd: reference?.paragraphEnd ?? null,
+          lineStart: reference?.lineStart ?? null,
+          lineEnd: reference?.lineEnd ?? null,
+          searchText: chunk.text.toLowerCase()
+        }
+      });
+
+      if (reference) {
+        await prisma.citationSpan.create({
+          data: {
+            chunkId: createdChunk.id,
+            startChar: 0,
+            endChar: Math.max(1, Math.min(chunk.text.length, reference.quotedText.length)),
+            quotedText: reference.quotedText,
+            pageStart: reference.pageStart,
+            pageEnd: reference.pageEnd,
+            paragraphStart: reference.paragraphStart,
+            paragraphEnd: reference.paragraphEnd,
+            lineStart: reference.lineStart,
+            lineEnd: reference.lineEnd
+          }
+        });
+      }
+
+      createdChunks.push({
+        id: createdChunk.id,
+        chunkIndex: index
+      });
+    }
+
+    if (embeddingPayload) {
+      for (const createdChunk of createdChunks) {
+        const vector = embeddingPayload.data.find(
+          (entry) => entry.index === createdChunk.chunkIndex
+        );
+
+        if (!vector) {
+          continue;
+        }
+
+        await prisma.chunkEmbedding.create({
+          data: {
+            chunkId: createdChunk.id,
+            modelName: embeddingPayload.model,
+            dimensions: embeddingPayload.dimensions,
+            vectorJson: vector.embedding
+          }
+        });
+      }
+    }
+
+    await prisma.documentRevision.update({
+      where: { id: queuedJob.documentRevisionId },
+      data: {
+        status: "ready",
+        extractionQuality: "medium",
+        reviewFlag: false,
+        qualityNotes:
+          `${parsed.qualityNotes} Generated ${chunkEntries.length} chunks with the ${parsed.parser} parser.` +
+          (embeddingPayload
+            ? ` Embedded ${embeddingPayload.data.length} chunk(s) with ${embeddingPayload.model}.`
+            : embeddingFailureReason
+              ? ` Embedding skipped: ${embeddingFailureReason}.`
               : "")
-        }
-      });
+      }
+    });
 
-      await tx.document.update({
-        where: { id: queuedJob.documentRevision.documentId },
-        data: {
-          status: "ready",
-          latestRevisionId: queuedJob.documentRevisionId
-        }
-      });
+    await prisma.document.update({
+      where: { id: queuedJob.documentRevision.documentId },
+      data: {
+        status: "ready",
+        latestRevisionId: queuedJob.documentRevisionId
+      }
+    });
 
-      await tx.ingestionJob.update({
-        where: { id: queuedJob.id },
-        data: {
-          status: "completed",
-          completedAt: new Date(),
-          lastError: null
-        }
-      });
+    await prisma.ingestionJob.update({
+      where: { id: queuedJob.id },
+      data: {
+        status: "completed",
+        completedAt: new Date(),
+        lastError: null
+      }
     });
 
     return {
@@ -281,6 +311,9 @@ export async function processQueuedIngestionJob() {
           lastError: message
         }
       });
+    }, {
+      maxWait: 10_000,
+      timeout: 120_000
     });
 
     return {

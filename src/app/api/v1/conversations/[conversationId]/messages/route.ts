@@ -18,6 +18,97 @@ type RouteContext = {
   }>;
 };
 
+function formatLocationLabel(params: {
+  pageStart: number | null;
+  pageEnd: number | null;
+  paragraphStart: number | null;
+  paragraphEnd: number | null;
+  lineStart: number | null;
+  lineEnd: number | null;
+}) {
+  const segments = [
+    params.pageStart !== null
+      ? params.pageEnd !== null && params.pageEnd !== params.pageStart
+        ? `pages ${params.pageStart}-${params.pageEnd}`
+        : `page ${params.pageStart}`
+      : null,
+    params.paragraphStart !== null
+      ? params.paragraphEnd !== null && params.paragraphEnd !== params.paragraphStart
+        ? `paragraphs ${params.paragraphStart}-${params.paragraphEnd}`
+        : `paragraph ${params.paragraphStart}`
+      : null,
+    params.lineStart !== null
+      ? params.lineEnd !== null && params.lineEnd !== params.lineStart
+        ? `lines ${params.lineStart}-${params.lineEnd}`
+        : `line ${params.lineStart}`
+      : null
+  ].filter(Boolean);
+
+  return segments.join(", ");
+}
+
+function serializeMessage(message: {
+  id: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  createdAt: Date;
+  answerRecord?: {
+    state: string;
+    modelName: string | null;
+    citations: Array<{
+      citationOrder: number;
+      citationSpan: {
+        quotedText: string;
+        pageStart: number | null;
+        pageEnd: number | null;
+        paragraphStart: number | null;
+        paragraphEnd: number | null;
+        lineStart: number | null;
+        lineEnd: number | null;
+        chunk: {
+          text: string;
+          documentRevision: {
+            document: {
+              id: string;
+              title: string;
+              mimeType: string;
+            };
+          };
+        };
+      };
+    }>;
+  } | null;
+}) {
+  return {
+    id: message.id,
+    role: message.role,
+    content: message.content,
+    createdAt: message.createdAt,
+    answerRecord: message.answerRecord
+      ? {
+          state: message.answerRecord.state,
+          modelName: message.answerRecord.modelName,
+          citations: message.answerRecord.citations.map((citation) => ({
+            citationOrder: citation.citationOrder,
+            quotedText: citation.citationSpan.quotedText,
+            locationLabel: formatLocationLabel(citation.citationSpan),
+            pageStart: citation.citationSpan.pageStart,
+            pageEnd: citation.citationSpan.pageEnd,
+            paragraphStart: citation.citationSpan.paragraphStart,
+            paragraphEnd: citation.citationSpan.paragraphEnd,
+            lineStart: citation.citationSpan.lineStart,
+            lineEnd: citation.citationSpan.lineEnd,
+            document: {
+              id: citation.citationSpan.chunk.documentRevision.document.id,
+              title: citation.citationSpan.chunk.documentRevision.document.title,
+              mimeType: citation.citationSpan.chunk.documentRevision.document.mimeType
+            }
+          }))
+        }
+      : null
+  };
+}
+
 export async function GET(_: Request, context: RouteContext) {
   try {
     const { getPrisma } = await import("@/lib/prisma");
@@ -41,13 +132,38 @@ export async function GET(_: Request, context: RouteContext) {
       include: {
         answerRecord: {
           include: {
-            citations: true
+            citations: {
+              orderBy: {
+                citationOrder: "asc"
+              },
+              include: {
+                citationSpan: {
+                  include: {
+                    chunk: {
+                      include: {
+                        documentRevision: {
+                          include: {
+                            document: {
+                              select: {
+                                id: true,
+                                title: true,
+                                mimeType: true
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
     });
 
-    return ok({ messages });
+    return ok({ messages: messages.map(serializeMessage) });
   } catch {
     return serverError("Failed to load messages.");
   }
@@ -76,7 +192,13 @@ export async function POST(request: Request, context: RouteContext) {
                   include: {
                     chunks: {
                       include: {
-                        embedding: true
+                        embedding: true,
+                        citationSpans: {
+                          take: 1,
+                          orderBy: {
+                            startChar: "asc"
+                          }
+                        }
                       }
                     }
                   }
@@ -101,8 +223,18 @@ export async function POST(request: Request, context: RouteContext) {
         id: chunk.id,
         text: chunk.text,
         chunkIndex: chunk.chunkIndex,
+        documentId: document.id,
         documentRevisionId: chunk.documentRevisionId,
         documentTitle: document.title,
+        storageUri: document.latestRevision?.storageUri ?? null,
+        pageStart: chunk.pageStart,
+        pageEnd: chunk.pageEnd,
+        paragraphStart: chunk.paragraphStart,
+        paragraphEnd: chunk.paragraphEnd,
+        lineStart: chunk.lineStart,
+        lineEnd: chunk.lineEnd,
+        citationSpanId: chunk.citationSpans[0]?.id ?? null,
+        citationQuotedText: chunk.citationSpans[0]?.quotedText ?? null,
         embedding: Array.isArray(chunk.embedding?.vectorJson)
           ? (chunk.embedding?.vectorJson as number[])
           : null
@@ -135,7 +267,13 @@ export async function POST(request: Request, context: RouteContext) {
           matches: initialMatches.map((match) => ({
             text: match.text,
             chunkIndex: match.chunkIndex,
-            documentTitle: match.documentTitle
+            documentTitle: match.documentTitle,
+            pageStart: match.pageStart,
+            pageEnd: match.pageEnd,
+            paragraphStart: match.paragraphStart,
+            paragraphEnd: match.paragraphEnd,
+            lineStart: match.lineStart,
+            lineEnd: match.lineEnd
           }))
         });
       } catch {
@@ -163,7 +301,13 @@ export async function POST(request: Request, context: RouteContext) {
           matches: rankedMatches.map((match) => ({
             text: match.text,
             chunkIndex: match.chunkIndex,
-            documentTitle: match.documentTitle
+            documentTitle: match.documentTitle,
+            pageStart: match.pageStart,
+            pageEnd: match.pageEnd,
+            paragraphStart: match.paragraphStart,
+            paragraphEnd: match.paragraphEnd,
+            lineStart: match.lineStart,
+            lineEnd: match.lineEnd
           }))
         });
       } catch (error) {
@@ -183,9 +327,9 @@ export async function POST(request: Request, context: RouteContext) {
 
       const assistantContent =
         readyDocuments.length === 0
-          ? "This collection does not have any ready documents yet. Upload and process a document before asking grounded questions."
+          ? "I don't have any ready documents in this collection yet. Upload and process a document first, then ask again."
           : rankedMatches.length === 0
-            ? "I could not find grounded evidence for that question in the processed document set."
+            ? "I couldn't find grounded evidence for that question in the documents I have ready right now."
             : generated?.provider === "vast-openai-compatible"
               ? generated.answer
               : composeGroundedAnswer({
@@ -193,7 +337,13 @@ export async function POST(request: Request, context: RouteContext) {
                   matches: rankedMatches.map((match) => ({
                     text: match.text,
                     chunkIndex: match.chunkIndex,
-                    documentTitle: match.documentTitle
+                    documentTitle: match.documentTitle,
+                    pageStart: match.pageStart,
+                    pageEnd: match.pageEnd,
+                    paragraphStart: match.paragraphStart,
+                    paragraphEnd: match.paragraphEnd,
+                    lineStart: match.lineStart,
+                    lineEnd: match.lineEnd
                   }))
                 });
 
@@ -264,12 +414,83 @@ export async function POST(request: Request, context: RouteContext) {
             }
           });
         }
+
+        for (const [index, match] of rankedMatches.entries()) {
+          if (!match.citationSpanId) {
+            continue;
+          }
+
+          await tx.answerCitation.create({
+            data: {
+              answerRecordId: answerRecord.id,
+              citationSpanId: match.citationSpanId,
+              citationOrder: index + 1
+            }
+          });
+        }
       }
 
       return { userMessage, assistantMessage, answerRecord };
     });
 
-    return ok(result, { status: 201 });
+    const hydratedMessages = await prisma.message.findMany({
+      where: {
+        id: {
+          in: [result.userMessage.id, result.assistantMessage.id]
+        }
+      },
+      include: {
+        answerRecord: {
+          include: {
+            citations: {
+              orderBy: {
+                citationOrder: "asc"
+              },
+              include: {
+                citationSpan: {
+                  include: {
+                    chunk: {
+                      include: {
+                        documentRevision: {
+                          include: {
+                            document: {
+                              select: {
+                                id: true,
+                                title: true,
+                                mimeType: true
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      orderBy: {
+        createdAt: "asc"
+      }
+    });
+
+    const userMessage = hydratedMessages.find((message) => message.id === result.userMessage.id);
+    const assistantMessage = hydratedMessages.find(
+      (message) => message.id === result.assistantMessage.id
+    );
+
+    return ok(
+      {
+        userMessage: userMessage ? serializeMessage(userMessage) : result.userMessage,
+        assistantMessage: assistantMessage
+          ? serializeMessage(assistantMessage)
+          : result.assistantMessage,
+        answerRecord: result.answerRecord
+      },
+      { status: 201 }
+    );
   } catch (error) {
     if (error instanceof Error && error.message.includes("Foreign key constraint")) {
       return badRequest("Invalid conversation message request.");

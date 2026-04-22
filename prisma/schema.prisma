@@ -176,6 +176,8 @@ model Chunk {
   charCount          Int
   pageStart          Int?
   pageEnd            Int?
+  paragraphStart     Int?
+  paragraphEnd       Int?
   lineStart          Int?
   lineEnd            Int?
   searchText         String?
@@ -209,6 +211,8 @@ model CitationSpan {
   quotedText      String
   pageStart       Int?
   pageEnd         Int?
+  paragraphStart  Int?
+  paragraphEnd    Int?
   lineStart       Int?
   lineEnd         Int?
   chunk           Chunk            @relation(fields: [chunkId], references: [id], onDelete: Cascade)

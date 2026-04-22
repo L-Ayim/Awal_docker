@@ -1,6 +1,7 @@
 import { createHash } from "crypto";
 import { mkdir, writeFile } from "fs/promises";
 import { join } from "path";
+import { pathToFileURL } from "url";
 
 function safeSegment(value: string) {
   return value.replace(/[^a-zA-Z0-9-_]/g, "_");
@@ -30,7 +31,7 @@ export async function persistUpload(params: {
   const checksum = createHash("sha256").update(params.bytes).digest("hex");
 
   return {
-    storageUri: `file://${absolutePath}`,
+    storageUri: pathToFileURL(absolutePath).href,
     checksum,
     fileSizeBytes: params.bytes.byteLength
   };

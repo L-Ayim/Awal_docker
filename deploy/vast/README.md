@@ -5,7 +5,7 @@ This folder packages the non-Fly runtime pieces so a fresh Vast box can be broug
 ## Services
 
 - `docling`
-  - CPU-oriented document extraction service
+  - document extraction service with OCR support
   - exposes `POST /extract`
   - default internal port: `8010`
 - `embeddings`
@@ -26,6 +26,7 @@ Build and run from the repo root:
 
 ```bash
 export DOC_PROCESSOR_API_KEY=awal-docling-key
+export DOCLING_DEVICE=cuda
 bash deploy/vast/docling/build-and-run.sh
 ```
 
@@ -33,7 +34,7 @@ Manual build:
 
 ```bash
 docker build -f deploy/vast/docling/Dockerfile -t awal-docling-service .
-docker run -d --name awal-docling-service -p 8010:8010 -e DOC_PROCESSOR_API_KEY=awal-docling-key awal-docling-service
+docker run -d --gpus all --name awal-docling-service -p 8010:8010 -e DOC_PROCESSOR_API_KEY=awal-docling-key -e DOCLING_DEVICE=cuda awal-docling-service
 ```
 
 Health check:
@@ -107,5 +108,6 @@ flyctl secrets set `
 ## Important
 
 - Vast must expose the selected public ports.
+- The Docling container should be rebuilt on the Vast box after GPU/OCR changes.
 - If the box is replaced, the same commands can be reused.
 - Long-term, durable object storage should replace machine-local `/tmp` upload paths.

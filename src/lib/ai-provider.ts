@@ -2,6 +2,12 @@ type EvidenceMatch = {
   text: string;
   chunkIndex: number;
   documentTitle: string;
+  pageStart: number | null;
+  pageEnd: number | null;
+  paragraphStart: number | null;
+  paragraphEnd: number | null;
+  lineStart: number | null;
+  lineEnd: number | null;
 };
 
 type ServiceConfig = {
@@ -66,10 +72,30 @@ export function getAiRuntimeConfig() {
 function buildEvidencePayload(query: string, matches: EvidenceMatch[]) {
   const evidence = matches
     .map((match, index) => {
+      const location = [
+        match.pageStart !== null
+          ? match.pageEnd !== null && match.pageEnd !== match.pageStart
+            ? `pages ${match.pageStart}-${match.pageEnd}`
+            : `page ${match.pageStart}`
+          : null,
+        match.paragraphStart !== null
+          ? match.paragraphEnd !== null && match.paragraphEnd !== match.paragraphStart
+            ? `paragraphs ${match.paragraphStart}-${match.paragraphEnd}`
+            : `paragraph ${match.paragraphStart}`
+          : null,
+        match.lineStart !== null
+          ? match.lineEnd !== null && match.lineEnd !== match.lineStart
+            ? `lines ${match.lineStart}-${match.lineEnd}`
+            : `line ${match.lineStart}`
+          : null
+      ]
+        .filter(Boolean)
+        .join(", ");
+
       return [
-        `[E${index + 1}]`,
+        `[${index + 1}]`,
         `document: ${match.documentTitle}`,
-        `chunk: ${match.chunkIndex + 1}`,
+        `location: ${location || `chunk ${match.chunkIndex + 1}`}`,
         match.text
       ].join("\n");
     })
@@ -85,9 +111,19 @@ function buildEvidencePayload(query: string, matches: EvidenceMatch[]) {
     "Instructions:",
     "- Answer only from the evidence.",
     "- If the evidence is insufficient, respond with exactly: INSUFFICIENT_EVIDENCE",
-    "- If you answer, cite evidence ids like [E1] or [E2] inline.",
+    "- Keep the answer short: 2 to 4 sentences maximum.",
+    "- Write in a friendly, direct tone.",
+    "- When the evidence spans multiple documents, synthesize it into one answer instead of answering from only one source.",
+    "- If you answer, cite evidence ids like [1] or [2] inline.",
     "- Do not use outside knowledge."
   ].join("\n");
+}
+
+function sanitizeGeneratedAnswer(content: string) {
+  return content
+    .replace(/<think>[\s\S]*?<\/think>/gi, "")
+    .replace(/^\s*think\s*[\r\n]+/gi, "")
+    .trim();
 }
 
 async function postJson<TResponse>(
@@ -196,7 +232,7 @@ export async function generateGroundedAnswer(params: {
         {
           role: "system",
           content:
-            "You are Awal. Answer only from supplied evidence. If the evidence is insufficient, return exactly INSUFFICIENT_EVIDENCE."
+            "You are Awal. Answer only from supplied evidence. Keep answers brief, user-facing, and friendly. Lead with the answer, avoid robotic phrasing, and keep it to 2 to 4 sentences. If the evidence is insufficient, return exactly INSUFFICIENT_EVIDENCE. Do not reveal chain-of-thought. Do not output <think> tags or hidden reasoning."
         },
         {
           role: "user",
@@ -206,12 +242,12 @@ export async function generateGroundedAnswer(params: {
     }
   });
 
-  const content = json.choices?.[0]?.message?.content?.trim() || "";
+  const content = sanitizeGeneratedAnswer(json.choices?.[0]?.message?.content || "");
 
   if (!content || content === "INSUFFICIENT_EVIDENCE") {
     return {
       answer:
-        "I could not produce a grounded answer from the retrieved evidence set.",
+        "I couldn't find enough grounded evidence in the processed documents to answer that confidently.",
       answerState: "insufficient_evidence",
       modelName: json.model || config.llmModel,
       provider: "vast-openai-compatible"

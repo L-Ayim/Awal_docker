@@ -2,8 +2,18 @@ type ChunkCandidate = {
   id: string;
   text: string;
   chunkIndex: number;
+  documentId: string;
   documentRevisionId: string;
   documentTitle: string;
+  storageUri: string | null;
+  pageStart: number | null;
+  pageEnd: number | null;
+  paragraphStart: number | null;
+  paragraphEnd: number | null;
+  lineStart: number | null;
+  lineEnd: number | null;
+  citationSpanId: string | null;
+  citationQuotedText: string | null;
   embedding: number[] | null;
 };
 
@@ -13,6 +23,44 @@ type RankedChunk = ChunkCandidate & {
   hybridScore: number;
   rerankScore: number | null;
 };
+
+function capPerDocument<T extends { documentId: string }>(items: T[], limit: number, perDocument: number) {
+  const counts = new Map<string, number>();
+  const selected: T[] = [];
+
+  for (const item of items) {
+    const count = counts.get(item.documentId) ?? 0;
+
+    if (count >= perDocument) {
+      continue;
+    }
+
+    selected.push(item);
+    counts.set(item.documentId, count + 1);
+
+    if (selected.length >= limit) {
+      break;
+    }
+  }
+
+  if (selected.length >= limit) {
+    return selected;
+  }
+
+  for (const item of items) {
+    if (selected.includes(item)) {
+      continue;
+    }
+
+    selected.push(item);
+
+    if (selected.length >= limit) {
+      break;
+    }
+  }
+
+  return selected;
+}
 
 function normalize(text: string) {
   return text.toLowerCase().replace(/\s+/g, " ").trim();
@@ -55,8 +103,7 @@ export function rankChunks(params: {
 }) {
   const queryTokens = tokenize(params.query);
   const limit = params.limit ?? 8;
-
-  return params.chunks
+  const ranked = params.chunks
     .map((chunk) => {
       const haystack = normalize(chunk.text);
       let lexicalScore = 0;
@@ -85,8 +132,9 @@ export function rankChunks(params: {
       } satisfies RankedChunk;
     })
     .filter((chunk) => chunk.lexicalScore > 0 || (chunk.denseScore ?? 0) >= 0.35)
-    .sort((left, right) => right.hybridScore - left.hybridScore)
-    .slice(0, limit);
+    .sort((left, right) => right.hybridScore - left.hybridScore);
+
+  return capPerDocument(ranked, limit, 2);
 }
 
 export function applyRerankScores(params: {
@@ -101,8 +149,7 @@ export function applyRerankScores(params: {
     params.rerankScores.map((entry) => [entry.index, entry.score] as const)
   );
   const limit = params.limit ?? 5;
-
-  return params.matches
+  const ranked = params.matches
     .map((match, index) => ({
       ...match,
       rerankScore: rerankScoreByIndex.get(index) ?? null
@@ -111,8 +158,9 @@ export function applyRerankScores(params: {
       const leftScore = left.rerankScore ?? left.hybridScore;
       const rightScore = right.rerankScore ?? right.hybridScore;
       return rightScore - leftScore;
-    })
-    .slice(0, limit);
+    });
+
+  return capPerDocument(ranked, limit, 2);
 }
 
 export function composeGroundedAnswer(params: {
@@ -121,17 +169,42 @@ export function composeGroundedAnswer(params: {
     text: string;
     chunkIndex: number;
     documentTitle: string;
+    pageStart: number | null;
+    pageEnd: number | null;
+    paragraphStart: number | null;
+    paragraphEnd: number | null;
+    lineStart: number | null;
+    lineEnd: number | null;
   }>;
 }) {
   const snippets = params.matches.map((match, index) => {
     const excerpt =
       match.text.length > 260 ? `${match.text.slice(0, 257).trimEnd()}...` : match.text;
+    const locations = [
+      match.pageStart !== null
+        ? match.pageEnd !== null && match.pageEnd !== match.pageStart
+          ? `pages ${match.pageStart}-${match.pageEnd}`
+          : `page ${match.pageStart}`
+        : null,
+      match.paragraphStart !== null
+        ? match.paragraphEnd !== null && match.paragraphEnd !== match.paragraphStart
+          ? `paragraphs ${match.paragraphStart}-${match.paragraphEnd}`
+          : `paragraph ${match.paragraphStart}`
+        : null,
+      match.lineStart !== null
+        ? match.lineEnd !== null && match.lineEnd !== match.lineStart
+          ? `lines ${match.lineStart}-${match.lineEnd}`
+          : `line ${match.lineStart}`
+        : null
+    ]
+      .filter(Boolean)
+      .join(", ");
 
-    return `${index + 1}. ${match.documentTitle}, chunk ${match.chunkIndex + 1}: ${excerpt}`;
+    return `${index + 1}. ${match.documentTitle}${locations ? ` (${locations})` : ""}: ${excerpt}`;
   });
 
   return [
-    "I found relevant material in the processed document set.",
+    "Here’s the most relevant material I found in the processed documents.",
     "",
     "Grounded snippets:",
     ...snippets

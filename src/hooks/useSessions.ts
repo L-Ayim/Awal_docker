@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { ChatBootstrap, ChatMessage, ChatSession, ChatRole } from "@/types/chat";
+import type {
+  ChatBootstrap,
+  ChatCitation,
+  ChatMessage,
+  ChatSession,
+  ChatRole
+} from "@/types/chat";
 
 type BootstrapResponse = {
   workspace: {
@@ -29,6 +35,11 @@ type MessagesResponse = {
     role: ChatRole;
     content: string;
     createdAt: string;
+    answerRecord?: {
+      state: string;
+      modelName: string | null;
+      citations: ChatCitation[];
+    } | null;
   }>;
 };
 
@@ -46,12 +57,22 @@ type CreateMessageResponse = {
     role: ChatRole;
     content: string;
     createdAt: string;
+    answerRecord?: {
+      state: string;
+      modelName: string | null;
+      citations: ChatCitation[];
+    } | null;
   };
   assistantMessage: {
     id: string;
     role: ChatRole;
     content: string;
     createdAt: string;
+    answerRecord?: {
+      state: string;
+      modelName: string | null;
+      citations: ChatCitation[];
+    } | null;
   };
 };
 
@@ -60,12 +81,18 @@ function mapMessage(message: {
   role: ChatRole;
   content: string;
   createdAt: string;
+  answerRecord?: {
+    state: string;
+    modelName: string | null;
+    citations: ChatCitation[];
+  } | null;
 }): ChatMessage {
   return {
     id: message.id,
     role: message.role,
     content: message.content,
-    createdAt: new Date(message.createdAt).getTime()
+    createdAt: new Date(message.createdAt).getTime(),
+    answerRecord: message.answerRecord ?? null
   };
 }
 

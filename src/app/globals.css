@@ -27,6 +27,23 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: "Segoe UI", system-ui, sans-serif;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(16, 82, 224, 0.45) rgba(19, 43, 103, 0.08);
+}
+
+*::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+*::-webkit-scrollbar-track {
+  background: rgba(19, 43, 103, 0.08);
+}
+
+*::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(16, 82, 224, 0.72), rgba(19, 43, 103, 0.9));
+  border-radius: 999px;
+  border: 3px solid rgba(19, 43, 103, 0.08);
 }
 
 body {
@@ -364,6 +381,83 @@ h1 {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+.chat-references {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.chat-section-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.chat-reference-list,
+.chat-file-list {
+  display: grid;
+  gap: 10px;
+}
+
+.chat-reference-card,
+.chat-file-card {
+  border-radius: 16px;
+  border: 1px solid rgba(16, 82, 224, 0.14);
+  background: rgba(255, 255, 255, 0.82);
+  padding: 12px 14px;
+}
+
+.chat-reference-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 14px;
+  margin-bottom: 8px;
+}
+
+.chat-reference-meta strong,
+.chat-file-card strong {
+  font-size: 0.92rem;
+}
+
+.chat-reference-meta span,
+.chat-file-card span {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.chat-reference-card p,
+.chat-file-card {
+  line-height: 1.5;
+}
+
+.chat-files {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.chat-file-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  transition:
+    transform 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.chat-file-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(16, 82, 224, 0.32);
+  box-shadow: 0 12px 24px rgba(16, 82, 224, 0.1);
 }
 
 .chat-composer {

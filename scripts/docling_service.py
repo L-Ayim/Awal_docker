@@ -31,13 +31,19 @@ def _make_converter(ocr_mode: str):
     )
     from docling.document_converter import DocumentConverter, PdfFormatOption
 
+    device_name = os.getenv("DOCLING_DEVICE", "cpu").strip().lower()
+    if device_name in {"cuda", "gpu"}:
+        accelerator_device = AcceleratorDevice.CUDA
+    else:
+        accelerator_device = AcceleratorDevice.CPU
+
     pdf_options = PdfPipelineOptions()
-    pdf_options.do_ocr = ocr_mode == "force-ocr"
+    pdf_options.do_ocr = ocr_mode in {"force-ocr", "ocr", "always-ocr"}
     pdf_options.do_table_structure = True
     pdf_options.table_structure_options = TableStructureOptions(do_cell_matching=True)
     pdf_options.accelerator_options = AcceleratorOptions(
         num_threads=max(1, os.cpu_count() or 1),
-        device=AcceleratorDevice.CPU,
+        device=accelerator_device,
     )
 
     return DocumentConverter(
@@ -47,6 +53,11 @@ def _make_converter(ocr_mode: str):
             )
         }
     )
+
+
+def _get_device_name() -> str:
+    device_name = os.getenv("DOCLING_DEVICE", "cpu").strip().lower()
+    return "cuda" if device_name in {"cuda", "gpu"} else "cpu"
 
 
 def _count_pages(document) -> int | None:
@@ -70,7 +81,7 @@ def _convert_pdf(source_path: Path, title: str, ocr_mode: str) -> dict:
         "title": title or source_path.stem,
         "markdown": markdown,
         "pageCount": _count_pages(document),
-        "qualityNotes": f"Converted with remote Docling ({ocr_mode}).",
+        "qualityNotes": f"Converted with remote Docling ({ocr_mode}, {_get_device_name()}).",
     }
 
 
