@@ -1,0 +1,21 @@
+flowchart LR
+    U["User"] --> FE["Chat UI"]
+    FE --> API["Awal Runtime on Fly.io"]
+
+    API --> AUTH["Session + Access Control"]
+    API --> RET["Retrieval Orchestrator"]
+    API --> POLICY["Answer Policy Layer"]
+    API --> ING["Ingestion Coordinator"]
+    API --> LOG["Audit + Trace Logging"]
+
+    RET --> DB["Neon Postgres"]
+    RET --> RR["Reranker"]
+    RET --> EMB["Embedding Search"]
+    ING --> DOCLING["Docling Conversion + Structure Extraction"]
+    DOCLING --> NORM["Awal Normalization + Chunking"]
+    NORM --> DB
+
+    POLICY --> LLM["Qwen3-8B on Vast.ai"]
+    RR --> DB
+    EMB --> DB
+    LOG --> DB

@@ -1,0 +1,27 @@
+flowchart TB
+    subgraph Client["Client"]
+        UI["Web Chat UI"]
+    end
+
+    subgraph Fly["Fly.io"]
+        API["Awal API"]
+        WORKER["Awal Worker"]
+        DOCLING["Docling Ingestion Runtime"]
+    end
+
+    subgraph Neon["Neon Postgres"]
+        DB["Operational + Retrieval Data"]
+    end
+
+    subgraph Vast["Vast.ai"]
+        VLLM["vLLM / Qwen3-8B"]
+    end
+
+    UI --> API
+    API --> DB
+    API --> VLLM
+    API --> WORKER
+    WORKER --> DB
+    WORKER --> VLLM
+    WORKER --> DOCLING
+    DOCLING --> DB

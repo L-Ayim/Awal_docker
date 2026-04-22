@@ -1,0 +1,7 @@
+flowchart LR
+    REQ["Chat Request"] --> POLICY["Answer Policy Layer"]
+    POLICY --> REG["Model Registry"]
+    REG --> GEN["Active Generation Profile"]
+    REG --> EMB["Active Embedding Profile"]
+    REG --> RER["Active Reranker Profile"]
+    GEN --> OUT["Normalized Provider Result"]

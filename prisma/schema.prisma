@@ -1,0 +1,320 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum DocumentStatus {
+  uploaded
+  processing
+  ready
+  failed
+  archived
+}
+
+enum RevisionStatus {
+  uploaded
+  classifying
+  parsing_standard
+  parsed_standard
+  ocr_required
+  parsing_ocr
+  normalizing
+  embedding
+  ready
+  failed
+  manual_review_required
+}
+
+enum QualityTier {
+  high
+  medium
+  low
+}
+
+enum IngestionJobStatus {
+  queued
+  processing
+  completed
+  failed
+  canceled
+}
+
+enum ConversationStatus {
+  active
+  archived
+}
+
+enum MessageRole {
+  user
+  assistant
+  system
+}
+
+enum AnswerState {
+  grounded_answer
+  insufficient_evidence
+  conflict_detected
+  ingestion_pending
+}
+
+model Workspace {
+  id            String         @id @default(cuid())
+  name          String
+  slug          String         @unique
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  collections   Collection[]
+  documents     Document[]
+  conversations Conversation[]
+  auditEvents   AuditEvent[]
+}
+
+model Collection {
+  id            String         @id @default(cuid())
+  workspaceId   String
+  name          String
+  description   String?
+  visibility    String         @default("private")
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  workspace     Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  documents     Document[]
+  conversations Conversation[]
+
+  @@index([workspaceId])
+}
+
+model Document {
+  id               String             @id @default(cuid())
+  workspaceId      String
+  collectionId     String
+  title            String
+  sourceKind       String
+  mimeType         String
+  status           DocumentStatus     @default(uploaded)
+  latestRevisionId String?            @unique
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  workspace        Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  collection       Collection         @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  revisions        DocumentRevision[] @relation("DocumentRevisions")
+  latestRevision   DocumentRevision?  @relation("LatestDocumentRevision", fields: [latestRevisionId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@index([workspaceId])
+  @@index([collectionId])
+}
+
+model DocumentRevision {
+  id                 String           @id @default(cuid())
+  documentId         String
+  storageUri         String?
+  checksum           String?
+  fileSizeBytes      BigInt?
+  status             RevisionStatus   @default(uploaded)
+  extractionQuality  QualityTier?
+  ingestionMode      String           @default("standard")
+  reviewFlag         Boolean          @default(false)
+  qualityNotes       String?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  document           Document         @relation("DocumentRevisions", fields: [documentId], references: [id], onDelete: Cascade)
+  latestForDocument  Document?        @relation("LatestDocumentRevision")
+  sections           DocumentSection[]
+  chunks             Chunk[]
+  ingestionJobs      IngestionJob[]
+
+  @@index([documentId])
+  @@index([status])
+}
+
+model IngestionJob {
+  id                 String             @id @default(cuid())
+  documentRevisionId String
+  status             IngestionJobStatus @default(queued)
+  attemptCount       Int                @default(0)
+  workerHint         String?
+  queuedAt           DateTime           @default(now())
+  startedAt          DateTime?
+  completedAt        DateTime?
+  lastError          String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  documentRevision   DocumentRevision   @relation(fields: [documentRevisionId], references: [id], onDelete: Cascade)
+
+  @@index([documentRevisionId])
+  @@index([status])
+}
+
+model DocumentSection {
+  id                 String           @id @default(cuid())
+  documentRevisionId String
+  parentSectionId    String?
+  sectionPath        String
+  heading            String?
+  ordinal            Int
+  documentRevision   DocumentRevision @relation(fields: [documentRevisionId], references: [id], onDelete: Cascade)
+  parentSection      DocumentSection? @relation("SectionTree", fields: [parentSectionId], references: [id], onDelete: SetNull)
+  childSections      DocumentSection[] @relation("SectionTree")
+  chunks             Chunk[]
+
+  @@index([documentRevisionId])
+}
+
+model Chunk {
+  id                 String            @id @default(cuid())
+  documentRevisionId String
+  sectionId          String?
+  chunkIndex         Int
+  text               String
+  tokenCount         Int?
+  charCount          Int
+  pageStart          Int?
+  pageEnd            Int?
+  lineStart          Int?
+  lineEnd            Int?
+  searchText         String?
+  embeddingRef       String?
+  documentRevision   DocumentRevision  @relation(fields: [documentRevisionId], references: [id], onDelete: Cascade)
+  section            DocumentSection?  @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+  embedding          ChunkEmbedding?
+  citationSpans      CitationSpan[]
+  retrievalCandidates RetrievalCandidate[]
+
+  @@unique([documentRevisionId, chunkIndex])
+  @@index([documentRevisionId])
+}
+
+model ChunkEmbedding {
+  id         String   @id @default(cuid())
+  chunkId     String   @unique
+  modelName   String
+  dimensions  Int
+  vectorJson  Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  chunk       Chunk    @relation(fields: [chunkId], references: [id], onDelete: Cascade)
+}
+
+model CitationSpan {
+  id              String           @id @default(cuid())
+  chunkId         String
+  startChar       Int
+  endChar         Int
+  quotedText      String
+  pageStart       Int?
+  pageEnd         Int?
+  lineStart       Int?
+  lineEnd         Int?
+  chunk           Chunk            @relation(fields: [chunkId], references: [id], onDelete: Cascade)
+  answerCitations AnswerCitation[]
+
+  @@index([chunkId])
+}
+
+model Conversation {
+  id            String             @id @default(cuid())
+  workspaceId   String
+  collectionId  String
+  title         String?
+  status        ConversationStatus @default(active)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  workspace     Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  collection    Collection         @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  messages      Message[]
+
+  @@index([workspaceId])
+  @@index([collectionId])
+}
+
+model Message {
+  id             String          @id @default(cuid())
+  conversationId String
+  role           MessageRole
+  content        String
+  createdAt      DateTime        @default(now())
+  conversation   Conversation    @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  retrievalTrace RetrievalTrace?
+  answerRecord   AnswerRecord?
+
+  @@index([conversationId])
+}
+
+model RetrievalTrace {
+  id               String               @id @default(cuid())
+  conversationId   String
+  messageId        String               @unique
+  queryText        String
+  retrievalMode    String
+  thresholdPassed  Boolean
+  createdAt        DateTime             @default(now())
+  message          Message              @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  candidates       RetrievalCandidate[]
+
+  @@index([conversationId])
+}
+
+model RetrievalCandidate {
+  id               String         @id @default(cuid())
+  retrievalTraceId String
+  chunkId          String
+  denseScore       Float?
+  lexicalScore     Float?
+  hybridScore      Float?
+  rerankScore      Float?
+  finalRank        Int
+  selected         Boolean        @default(false)
+  retrievalTrace   RetrievalTrace @relation(fields: [retrievalTraceId], references: [id], onDelete: Cascade)
+  chunk            Chunk          @relation(fields: [chunkId], references: [id], onDelete: Cascade)
+
+  @@index([retrievalTraceId])
+  @@index([chunkId])
+}
+
+model AnswerRecord {
+  id                  String           @id @default(cuid())
+  conversationId      String
+  messageId           String           @unique
+  state               AnswerState
+  modelName           String?
+  promptTokenCount    Int?
+  completionTokenCount Int?
+  refusalReason       String?
+  createdAt           DateTime         @default(now())
+  message             Message          @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  citations           AnswerCitation[]
+
+  @@index([conversationId])
+}
+
+model AnswerCitation {
+  id             String       @id @default(cuid())
+  answerRecordId String
+  citationSpanId String
+  citationOrder  Int
+  answerRecord   AnswerRecord @relation(fields: [answerRecordId], references: [id], onDelete: Cascade)
+  citationSpan   CitationSpan @relation(fields: [citationSpanId], references: [id], onDelete: Cascade)
+
+  @@index([answerRecordId])
+  @@index([citationSpanId])
+}
+
+model AuditEvent {
+  id          String    @id @default(cuid())
+  workspaceId String
+  eventType   String
+  entityType  String
+  entityId    String
+  payloadJson Json?
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([eventType])
+}

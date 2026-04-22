@@ -1,0 +1,15 @@
+stateDiagram-v2
+    [*] --> queued
+    queued --> running
+    running --> completed
+    running --> failed
+    running --> canceled
+
+    state running {
+        [*] --> intake
+        intake --> parse
+        parse --> normalize
+        normalize --> embed
+        embed --> persist
+        persist --> [*]
+    }

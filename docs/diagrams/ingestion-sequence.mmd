@@ -1,0 +1,17 @@
+sequenceDiagram
+    participant U as User
+    participant API as Awal API
+    participant W as Worker
+    participant D as Docling
+    participant DB as Neon
+
+    U->>API: Upload document
+    API->>DB: Create document and revision
+    API->>W: Enqueue ingestion
+    W->>DB: Load revision
+    W->>D: Convert and extract structure
+    D-->>W: Structured document output
+    W->>W: Normalize sections and chunks
+    W->>W: Generate embeddings
+    W->>DB: Persist chunks, spans, statuses
+    W->>DB: Mark revision ready

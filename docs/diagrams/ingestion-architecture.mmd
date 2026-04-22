@@ -1,0 +1,9 @@
+flowchart LR
+    UP["Document Upload"] --> DOC["Document + Revision Record"]
+    DOC --> JOB["document.ingest job"]
+    JOB --> DOCLING["Docling Conversion"]
+    DOCLING --> STRUCT["Structured Output"]
+    STRUCT --> NORM["Awal Normalization"]
+    NORM --> CHUNK["Chunk + Citation Span Build"]
+    CHUNK --> EMB["Embedding Generation"]
+    EMB --> READY["Revision Ready for Retrieval"]

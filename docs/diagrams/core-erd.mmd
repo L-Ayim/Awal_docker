@@ -1,0 +1,17 @@
+erDiagram
+    WORKSPACE ||--o{ COLLECTION : contains
+    WORKSPACE ||--o{ DOCUMENT : owns
+    COLLECTION ||--o{ DOCUMENT : groups
+    DOCUMENT ||--o{ DOCUMENT_REVISION : versions
+    DOCUMENT_REVISION ||--o{ DOCUMENT_SECTION : structures
+    DOCUMENT_REVISION ||--o{ CHUNK : yields
+    CHUNK ||--o{ CITATION_SPAN : contains
+    WORKSPACE ||--o{ CONVERSATION : scopes
+    COLLECTION ||--o{ CONVERSATION : bounds
+    CONVERSATION ||--o{ MESSAGE : has
+    MESSAGE ||--o| RETRIEVAL_TRACE : drives
+    RETRIEVAL_TRACE ||--o{ RETRIEVAL_CANDIDATE : ranks
+    MESSAGE ||--o| ANSWER_RECORD : resolves_to
+    ANSWER_RECORD ||--o{ ANSWER_CITATION : cites
+    CITATION_SPAN ||--o{ ANSWER_CITATION : used_by
+    WORKSPACE ||--o{ AUDIT_EVENT : logs
