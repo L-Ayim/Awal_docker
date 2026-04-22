@@ -1,0 +1,66 @@
+services:
+  vllm:
+    image: vllm/vllm-openai:latest
+    container_name: awal-vllm
+    restart: unless-stopped
+    entrypoint: ["/bin/bash", "-lc"]
+    command: >
+      vllm serve "${VLLM_MODEL:-Qwen/Qwen3-14B}"
+      --host 0.0.0.0
+      --port 8000
+      --api-key "${VLLM_API_KEY:-awal-vast-key}"
+      --dtype auto
+      --generation-config vllm
+      --enforce-eager
+      --max-model-len "${VLLM_MAX_MODEL_LEN:-4096}"
+      --gpu-memory-utilization "${VLLM_GPU_MEMORY_UTILIZATION:-0.82}"
+    ports:
+      - "${PUBLIC_VLLM_PORT:-8000}:8000"
+    environment:
+      HF_HOME: /root/.cache/huggingface
+      HUGGING_FACE_HUB_TOKEN: ${HF_TOKEN:-}
+    volumes:
+      - hf-cache:/root/.cache/huggingface
+    gpus: all
+
+  embeddings:
+    build:
+      context: ../..
+      dockerfile: deploy/vast/embeddings/Dockerfile
+    container_name: awal-embeddings
+    restart: unless-stopped
+    ports:
+      - "${PUBLIC_EMBEDDING_PORT:-8020}:8020"
+    environment:
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-awal-embedding-key}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-BAAI/bge-m3}
+    gpus: all
+
+  rerank:
+    build:
+      context: ../..
+      dockerfile: deploy/vast/rerank/Dockerfile
+    container_name: awal-rerank
+    restart: unless-stopped
+    ports:
+      - "${PUBLIC_RERANK_PORT:-8030}:8030"
+    environment:
+      RERANK_API_KEY: ${RERANK_API_KEY:-awal-rerank-key}
+      RERANK_MODEL: ${RERANK_MODEL:-BAAI/bge-reranker-v2-m3}
+    gpus: all
+
+  docling:
+    build:
+      context: ../..
+      dockerfile: deploy/vast/docling/Dockerfile
+    container_name: awal-docling
+    restart: unless-stopped
+    ports:
+      - "${PUBLIC_DOCLING_PORT:-8010}:8010"
+    environment:
+      DOC_PROCESSOR_API_KEY: ${DOC_PROCESSOR_API_KEY:-awal-docling-key}
+      DOCLING_DEVICE: ${DOCLING_DEVICE:-cuda}
+    gpus: all
+
+volumes:
+  hf-cache:

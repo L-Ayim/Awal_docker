@@ -14,7 +14,8 @@ This folder contains the architecture and implementation planning set for Awal.
 8. [Model Abstraction](C:\Users\Lawrence.Ayim\source\side_repos\Johnson\Awal\docs\model-abstraction.md)
 9. [Model and Serving Plan](C:\Users\Lawrence.Ayim\source\side_repos\Johnson\Awal\docs\model-and-serving.md)
 10. [Frontend](C:\Users\Lawrence.Ayim\source\side_repos\Johnson\Awal\docs\frontend.md)
-11. [Diagrams](C:\Users\Lawrence.Ayim\source\side_repos\Johnson\Awal\docs\diagrams\README.md)
+11. [Operations And Rebuild](C:\Users\Lawrence.Ayim\source\side_repos\Johnson\Awal\docs\operations-and-rebuild.md)
+12. [Diagrams](C:\Users\Lawrence.Ayim\source\side_repos\Johnson\Awal\docs\diagrams\README.md)
 
 ## Document set
 
@@ -38,5 +39,7 @@ This folder contains the architecture and implementation planning set for Awal.
   - model choices, GPU strategy, serving assumptions, and upgrade path
 - `frontend.md`
   - minimal product UI for the initial release
+- `operations-and-rebuild.md`
+  - repeatable GPU-host bring-up, Fly secret wiring, and post-rebuild checks
 - `diagrams/*`
   - Mermaid source diagrams for architecture, sequences, and ERD

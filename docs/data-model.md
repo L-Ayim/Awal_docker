@@ -206,6 +206,8 @@ Fields:
 - `citation_span_id`
 - `citation_order`
 
+`AnswerCitation` should reflect only the evidence ids selected by the model from the bounded evidence bundle, not every retrieved candidate.
+
 ### AuditEvent
 
 Operational and policy event log.

@@ -28,7 +28,7 @@ Awal is not intended to be a general assistant. Its runtime should prefer explic
   - model inference
   - primary generation service via `vLLM`
 - `Open-source models`
-  - generation: `Qwen3-8B`
+  - generation: `Qwen/Qwen3-14B`
   - embeddings: `BAAI/bge-m3`
   - reranking: `BAAI/bge-reranker-v2-m3`
 
@@ -45,6 +45,7 @@ Awal is not intended to be a general assistant. Its runtime should prefer explic
 - [Model Abstraction](C:\Users\Lawrence.Ayim\source\side_repos\Johnson\Awal\docs\model-abstraction.md)
 - [Model and Serving Plan](C:\Users\Lawrence.Ayim\source\side_repos\Johnson\Awal\docs\model-and-serving.md)
 - [Frontend](C:\Users\Lawrence.Ayim\source\side_repos\Johnson\Awal\docs\frontend.md)
+- [Operations And Rebuild](C:\Users\Lawrence.Ayim\source\side_repos\Johnson\Awal\docs\operations-and-rebuild.md)
 - [Diagrams](C:\Users\Lawrence.Ayim\source\side_repos\Johnson\Awal\docs\diagrams\README.md)
 - [Vast Deployment Assets](C:\Users\Lawrence.Ayim\source\side_repos\Johnson\Awal\deploy\vast\README.md)
 
@@ -60,6 +61,7 @@ In practical terms:
 
 - the model does not decide what documents it may use
 - the runtime decides what evidence is allowed
+- the model decides which retrieved evidence candidates are actually relevant to the answer
 - the answer must be traceable to retrieved spans
 - the system should never silently degrade into best-guess behavior
 

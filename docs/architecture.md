@@ -45,6 +45,7 @@ The initial version does not require:
 - `no silent downgrades`
 - `policy precedes side effects`
 - `the model is not the governor`
+- `the model selects from evidence bundles, not from the whole corpus`
 
 ## Architectural layers
 
@@ -89,10 +90,10 @@ Responsibilities:
 - vector retrieval
 - hybrid fusion
 - reranking
-- candidate evidence selection
+- candidate evidence bundling
 - chunk and span lookup
 
-The retrieval layer should select evidence, not write answers.
+The retrieval layer should prepare bounded evidence candidates, not write answers.
 
 ### 4. Model serving layer
 
@@ -100,14 +101,15 @@ This runs on Vast.ai.
 
 Responsibilities:
 
-- generate answers from provided evidence
-- optionally produce structured outputs
-- remain bounded by runtime-supplied evidence
+- infer whether the request is conversational, grounded, or insufficient-evidence
+- reason over runtime-supplied evidence candidates
+- select which candidate evidence ids support the answer
+- generate answer text from the selected evidence only
 
 This layer must not decide:
 
 - what corpus is allowed
-- whether evidence is sufficient
+- how citations are rendered
 - whether unsupported claims are acceptable
 
 ### 5. Storage and artifact layer
@@ -161,6 +163,27 @@ Every answer should be emitted as one of a small number of explicit states.
   - the referenced document set is not yet ready
 
 These are not UI labels only. They are runtime-level result types.
+
+## Grounded Answer Contract
+
+Awal now treats grounded answering as an explicit contract rather than plain free-text generation.
+
+Runtime responsibilities:
+
+- retrieve and rerank evidence candidates
+- package the question and evidence bundle
+- validate selected evidence ids
+- render canonical citations from stored span metadata
+- persist retrieval and answer traces
+
+Model responsibilities:
+
+- decide response kind
+- decide whether the evidence is sufficient
+- choose which evidence ids support each statement
+- write the natural-language answer
+
+This keeps the model doing interpretation and synthesis while the runtime keeps provenance and formatting stable.
 
 ## Security and scope model
 

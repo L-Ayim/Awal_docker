@@ -1,6 +1,25 @@
 # Vast Deployment
 
-This folder packages the non-Fly runtime pieces so a fresh Vast box can be brought up with predictable commands.
+This folder packages the non-Fly runtime pieces so a fresh GPU box can be brought up with predictable commands.
+
+## Recommended Bring-Up
+
+Use the compose stack first, not ad hoc tunnel commands.
+
+```bash
+cd deploy/vast
+cp .env.runtime.example .env.runtime
+docker compose --env-file .env.runtime -f docker-compose.gpu.yml up -d --build
+```
+
+This gives you one runtime definition for:
+
+- `vLLM`
+- `Docling`
+- `embeddings`
+- `rerank`
+
+The services should then be exposed directly on the server's public IP and stable ports.
 
 ## Services
 
@@ -61,7 +80,7 @@ curl http://127.0.0.1:8020/health
 
 ## vLLM Generation
 
-Install `vllm` on the box, then run:
+If you are not using Compose, install `vllm` on the box, then run:
 
 ```bash
 API_KEY=awal-vast-key bash deploy/vast/vllm/run-qwen3-8b.sh
@@ -107,7 +126,8 @@ flyctl secrets set `
 
 ## Important
 
-- Vast must expose the selected public ports.
-- The Docling container should be rebuilt on the Vast box after GPU/OCR changes.
-- If the box is replaced, the same commands can be reused.
+- Expose direct public ports for `8000`, `8010`, `8020`, and `8030`.
+- Do not treat temporary Cloudflare tunnels as the normal production path.
+- The Docling container should be rebuilt on the GPU host after OCR/runtime changes.
+- If the box is replaced, the same compose file and env file should be reusable.
 - Long-term, durable object storage should replace machine-local `/tmp` upload paths.
