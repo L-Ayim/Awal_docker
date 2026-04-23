@@ -2,8 +2,8 @@ import { access } from "fs/promises";
 import { constants as fsConstants } from "fs";
 import { execFile } from "child_process";
 import { promisify } from "util";
-import { fileURLToPath } from "url";
 import { join } from "path";
+import { materializeStoredFile } from "@/lib/storage";
 
 const execFileAsync = promisify(execFile);
 
@@ -80,44 +80,47 @@ export async function extractWithDocling(params: {
   storageUri: string | null;
   title: string;
 }) {
-  if (!params.storageUri || !params.storageUri.startsWith("file://")) {
-    throw new Error("Docling currently requires a file:// storage URI.");
-  }
-
   const python = await resolveDoclingPython();
   const scriptPath = join(process.cwd(), "scripts", "docling_extract.py");
-  const sourcePath = fileURLToPath(params.storageUri);
   const timeout = Number.parseInt(process.env.DOCLING_TIMEOUT_MS || "120000", 10);
+  const materialized = await materializeStoredFile({
+    storageUri: params.storageUri,
+    filenameHint: params.title
+  });
 
-  const { stdout, stderr } = await execFileAsync(
-    python,
-    [scriptPath, "--source", sourcePath, "--title", params.title],
-    {
-      timeout: Number.isFinite(timeout) ? timeout : 120000,
-      maxBuffer: 10 * 1024 * 1024
+  try {
+    const { stdout, stderr } = await execFileAsync(
+      python,
+      [scriptPath, "--source", materialized.absolutePath, "--title", params.title],
+      {
+        timeout: Number.isFinite(timeout) ? timeout : 120000,
+        maxBuffer: 10 * 1024 * 1024
+      }
+    );
+
+    if (!stdout.trim()) {
+      throw new Error(stderr.trim() || "Docling returned an empty response.");
     }
-  );
 
-  if (!stdout.trim()) {
-    throw new Error(stderr.trim() || "Docling returned an empty response.");
+    const parsed = JSON.parse(stdout) as Partial<DoclingExtractionResult>;
+
+    if (!parsed.markdown || typeof parsed.markdown !== "string") {
+      throw new Error("Docling did not return Markdown output.");
+    }
+
+    return {
+      title: parsed.title || params.title,
+      markdown: parsed.markdown,
+      pageCount:
+        typeof parsed.pageCount === "number" && Number.isFinite(parsed.pageCount)
+          ? parsed.pageCount
+          : null,
+      qualityNotes:
+        typeof parsed.qualityNotes === "string" && parsed.qualityNotes.length > 0
+          ? parsed.qualityNotes
+          : "Converted with Docling."
+    };
+  } finally {
+    await materialized.cleanup();
   }
-
-  const parsed = JSON.parse(stdout) as Partial<DoclingExtractionResult>;
-
-  if (!parsed.markdown || typeof parsed.markdown !== "string") {
-    throw new Error("Docling did not return Markdown output.");
-  }
-
-  return {
-    title: parsed.title || params.title,
-    markdown: parsed.markdown,
-    pageCount:
-      typeof parsed.pageCount === "number" && Number.isFinite(parsed.pageCount)
-        ? parsed.pageCount
-        : null,
-    qualityNotes:
-      typeof parsed.qualityNotes === "string" && parsed.qualityNotes.length > 0
-        ? parsed.qualityNotes
-        : "Converted with Docling."
-  };
 }

@@ -1,6 +1,5 @@
-import { readFile } from "fs/promises";
-import { fileURLToPath } from "url";
 import { notFound, serverError } from "@/lib/api";
+import { readStoredBytes } from "@/lib/storage";
 
 type RouteContext = {
   params: Promise<{
@@ -21,17 +20,16 @@ export async function GET(_: Request, context: RouteContext) {
       }
     });
 
-    if (!document?.latestRevision?.storageUri?.startsWith("file://")) {
+    if (!document?.latestRevision?.storageUri) {
       return notFound("Document file not found.");
     }
 
-    const absolutePath = fileURLToPath(document.latestRevision.storageUri);
-    const fileBytes = await readFile(absolutePath);
+    const stored = await readStoredBytes(document.latestRevision.storageUri);
 
-    return new Response(fileBytes, {
+    return new Response(stored.bytes, {
       status: 200,
       headers: {
-        "Content-Type": document.mimeType || "application/octet-stream",
+        "Content-Type": stored.mimeType || document.mimeType || "application/octet-stream",
         "Content-Disposition": `attachment; filename="${encodeURIComponent(document.title)}"`,
         "Cache-Control": "no-store"
       }

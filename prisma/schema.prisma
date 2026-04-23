@@ -127,6 +127,7 @@ model DocumentRevision {
   latestForDocument  Document?        @relation("LatestDocumentRevision")
   sections           DocumentSection[]
   chunks             Chunk[]
+  indexCards         DocumentIndexCard[]
   ingestionJobs      IngestionJob[]
 
   @@index([documentId])
@@ -187,9 +188,49 @@ model Chunk {
   embedding          ChunkEmbedding?
   citationSpans      CitationSpan[]
   retrievalCandidates RetrievalCandidate[]
+  indexCards         DocumentIndexCard[]
 
   @@unique([documentRevisionId, chunkIndex])
   @@index([documentRevisionId])
+}
+
+model DocumentIndexCard {
+  id                 String                       @id @default(cuid())
+  documentRevisionId String
+  chunkId            String?
+  kind               String
+  title              String
+  body               String
+  summary            String?
+  tagsJson           Json
+  aliasesJson        Json
+  searchText         String
+  pageStart          Int?
+  pageEnd            Int?
+  paragraphStart     Int?
+  paragraphEnd       Int?
+  lineStart          Int?
+  lineEnd            Int?
+  createdAt          DateTime                     @default(now())
+  updatedAt          DateTime                     @updatedAt
+  documentRevision   DocumentRevision             @relation(fields: [documentRevisionId], references: [id], onDelete: Cascade)
+  chunk              Chunk?                       @relation(fields: [chunkId], references: [id], onDelete: SetNull)
+  embedding          DocumentIndexCardEmbedding?
+
+  @@index([documentRevisionId])
+  @@index([chunkId])
+  @@index([kind])
+}
+
+model DocumentIndexCardEmbedding {
+  id         String            @id @default(cuid())
+  indexCardId String           @unique
+  modelName   String
+  dimensions  Int
+  vectorJson  Json
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  indexCard   DocumentIndexCard @relation(fields: [indexCardId], references: [id], onDelete: Cascade)
 }
 
 model ChunkEmbedding {

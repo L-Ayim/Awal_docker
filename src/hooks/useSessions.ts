@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   ChatBootstrap,
   ChatCitation,
@@ -76,6 +76,17 @@ type CreateMessageResponse = {
   };
 };
 
+type StreamEvent =
+  | { type: "status"; data: { stage: "queued" | "generating" | "streaming" } }
+  | { type: "user_message"; data: CreateMessageResponse["userMessage"] }
+  | { type: "assistant_delta"; data: { delta: string } }
+  | { type: "done"; data: CreateMessageResponse }
+  | { type: "error"; data: { message: string } };
+
+type UploadableFile = File & {
+  webkitRelativePath?: string;
+};
+
 function mapMessage(message: {
   id: string;
   role: ChatRole;
@@ -92,8 +103,41 @@ function mapMessage(message: {
     role: message.role,
     content: message.content,
     createdAt: new Date(message.createdAt).getTime(),
+    status: "complete",
     answerRecord: message.answerRecord ?? null
   };
+}
+
+function makeTempId(prefix: string) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function parseSseFrames(buffer: string, onEvent: (event: StreamEvent) => void) {
+  const frames = buffer.split("\n\n");
+
+  for (const frame of frames) {
+    const trimmed = frame.trim();
+
+    if (!trimmed) {
+      continue;
+    }
+
+    const eventLine = trimmed.match(/^event:\s*(.+)$/m);
+    const dataLine = trimmed.match(/^data:\s*([\s\S]+)$/m);
+
+    if (!eventLine || !dataLine) {
+      continue;
+    }
+
+    try {
+      onEvent({
+        type: eventLine[1] as StreamEvent["type"],
+        data: JSON.parse(dataLine[1]) as never
+      });
+    } catch {
+      continue;
+    }
+  }
 }
 
 function mapSession(conversation: {
@@ -138,7 +182,9 @@ export function useSessions() {
   const [bootstrap, setBootstrap] = useState<ChatBootstrap | null>(null);
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const [isSending, setIsSending] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const activeRequestRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     async function initialize() {
@@ -340,31 +386,38 @@ export function useSessions() {
       return;
     }
 
+    const optimisticUserId = makeTempId("user");
+    const optimisticAssistantId = makeTempId("assistant");
+    const optimisticUser: ChatMessage = {
+      id: optimisticUserId,
+      role: "user",
+      content: nextContent,
+      createdAt: Date.now(),
+      status: "sending",
+      answerRecord: null
+    };
+    const optimisticAssistant: ChatMessage = {
+      id: optimisticAssistantId,
+      role: "assistant",
+      content: "",
+      createdAt: Date.now(),
+      status: "sending",
+      answerRecord: null
+    };
+
     try {
       setIsSending(true);
       setError(null);
-
-      const data = await parseJson<CreateMessageResponse>(
-        await fetch(`/api/v1/conversations/${activeSessionId}/messages`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            content: nextContent
-          })
-        })
-      );
-
-      const appended = [mapMessage(data.userMessage), mapMessage(data.assistantMessage)];
+      const abortController = new AbortController();
+      activeRequestRef.current = abortController;
 
       setSessions((current) =>
         current.map((session) =>
           session.id === activeSessionId
             ? {
                 ...session,
-                messages: [...session.messages, ...appended],
-                messageCount: (session.messageCount ?? session.messages.length) + appended.length,
+                messages: [...session.messages, optimisticUser, optimisticAssistant],
+                messageCount: (session.messageCount ?? session.messages.length) + 2,
                 messagesLoaded: true,
                 title:
                   session.title === "New chat"
@@ -374,10 +427,201 @@ export function useSessions() {
             : session
         )
       );
+
+      const response = await fetch(`/api/v1/conversations/${activeSessionId}/messages?stream=1`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        signal: abortController.signal,
+        body: JSON.stringify({
+          content: nextContent
+        })
+      });
+
+      if (!response.ok || !response.body) {
+        const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+        throw new Error(payload?.message || "Failed to send message.");
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+
+        if (done) {
+          break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        const frames = buffer.split("\n\n");
+        buffer = frames.pop() ?? "";
+
+        for (const frame of frames) {
+          parseSseFrames(frame, (event) => {
+            if (event.type === "status") {
+              setSessions((current) =>
+                current.map((session) =>
+                  session.id === activeSessionId
+                    ? {
+                        ...session,
+                        messages: session.messages.map((message) =>
+                          message.id === optimisticAssistantId
+                            ? {
+                                ...message,
+                                status:
+                                  event.data.stage === "streaming" ? "streaming" : "sending"
+                              }
+                            : message
+                        )
+                      }
+                    : session
+                )
+              );
+              return;
+            }
+
+            if (event.type === "assistant_delta") {
+              setSessions((current) =>
+                current.map((session) =>
+                  session.id === activeSessionId
+                    ? {
+                        ...session,
+                        messages: session.messages.map((message) =>
+                          message.id === optimisticAssistantId
+                            ? {
+                                ...message,
+                                content: `${message.content}${event.data.delta}`,
+                                status: "streaming"
+                              }
+                            : message
+                        )
+                      }
+                    : session
+                )
+              );
+              return;
+            }
+
+            if (event.type === "user_message") {
+              const mappedUser = mapMessage(event.data);
+              setSessions((current) =>
+                current.map((session) =>
+                  session.id === activeSessionId
+                    ? {
+                        ...session,
+                        messages: session.messages.map((message) =>
+                          message.id === optimisticUserId ? mappedUser : message
+                        )
+                      }
+                    : session
+                )
+              );
+              return;
+            }
+
+            if (event.type === "done") {
+              const mappedUser = mapMessage(event.data.userMessage);
+              const mappedAssistant = mapMessage(event.data.assistantMessage);
+
+              setSessions((current) =>
+                current.map((session) =>
+                  session.id === activeSessionId
+                    ? {
+                        ...session,
+                        messages: session.messages.map((message) => {
+                          if (message.id === optimisticUserId) {
+                            return mappedUser;
+                          }
+
+                          if (message.id === optimisticAssistantId) {
+                            return mappedAssistant;
+                          }
+
+                          return message;
+                        })
+                      }
+                    : session
+                )
+              );
+              return;
+            }
+
+            if (event.type === "error") {
+              throw new Error(event.data.message);
+            }
+          });
+        }
+      }
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "Failed to send message.");
+      const aborted = nextError instanceof DOMException && nextError.name === "AbortError";
+      setSessions((current) =>
+        current.map((session) =>
+          session.id === activeSessionId
+            ? {
+                ...session,
+                messages: session.messages.map((message) =>
+                  message.id === optimisticAssistantId
+                    ? {
+                        ...message,
+                        content:
+                          aborted
+                            ? `${message.content.trim()}${message.content.trim() ? "\n\n" : ""}Response stopped.`
+                            : nextError instanceof Error
+                            ? nextError.message
+                            : "Failed to send message.",
+                        status: aborted ? "complete" : "error"
+                      }
+                    : message
+                )
+              }
+            : session
+        )
+      );
+      if (!aborted) {
+        setError(nextError instanceof Error ? nextError.message : "Failed to send message.");
+      }
     } finally {
+      activeRequestRef.current = null;
       setIsSending(false);
+    }
+  };
+
+  const stopSending = () => {
+    activeRequestRef.current?.abort();
+  };
+
+  const uploadDocuments = async (files: FileList | File[]) => {
+    if (!bootstrap || !files.length) {
+      return;
+    }
+
+    try {
+      setIsUploading(true);
+      setError(null);
+
+      for (const file of Array.from(files) as UploadableFile[]) {
+        const formData = new FormData();
+        formData.set("file", file);
+        formData.set("title", file.webkitRelativePath?.trim() || file.name);
+        formData.set("ingestionMode", "standard");
+
+        await parseJson(
+          await fetch(
+            `/api/v1/workspaces/${bootstrap.workspaceId}/collections/${bootstrap.collectionId}/documents/upload`,
+            {
+              method: "POST",
+              body: formData
+            }
+          )
+        );
+      }
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Failed to upload document.");
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -388,11 +632,14 @@ export function useSessions() {
     bootstrap,
     isBootstrapping,
     isSending,
+    isUploading,
     error,
     createNewSession,
     deleteSession,
     updateSessionTitle,
     sendMessage,
-    setSessionMessages
+    stopSending,
+    setSessionMessages,
+    uploadDocuments
   };
 }

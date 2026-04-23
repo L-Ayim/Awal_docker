@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { Prisma } from "@prisma/client";
 import { badRequest, notFound, ok, serverError, validationError } from "@/lib/api";
 import {
   generateEmbeddings,
@@ -18,60 +19,15 @@ type RouteContext = {
   }>;
 };
 
-function buildInlineCitationLabel(params: {
-  documentTitle: string;
-  pageStart: number | null;
-  pageEnd: number | null;
-  lineStart: number | null;
-  lineEnd: number | null;
-  paragraphStart: number | null;
-  paragraphEnd: number | null;
-}) {
-  const location = [
-    params.pageStart !== null
-      ? params.pageEnd !== null && params.pageEnd !== params.pageStart
-        ? `pages ${params.pageStart}-${params.pageEnd}`
-        : `page ${params.pageStart}`
-      : null,
-    params.lineStart !== null
-      ? params.lineEnd !== null && params.lineEnd !== params.lineStart
-        ? `lines ${params.lineStart}-${params.lineEnd}`
-        : `line ${params.lineStart}`
-      : null,
-    params.paragraphStart !== null
-      ? params.paragraphEnd !== null && params.paragraphEnd !== params.paragraphStart
-        ? `paragraphs ${params.paragraphStart}-${params.paragraphEnd}`
-        : `paragraph ${params.paragraphStart}`
-      : null
-  ]
-    .filter(Boolean)
-    .join(", ");
-
-  return `[${params.documentTitle}${location ? `, ${location}` : ""}]`;
+function encodeSseEvent(event: string, data: unknown) {
+  return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 }
 
-function buildCitationSuffix(
-  evidenceIds: number[],
-  matches: Array<{
-    documentTitle: string;
-    pageStart: number | null;
-    pageEnd: number | null;
-    paragraphStart: number | null;
-    paragraphEnd: number | null;
-    lineStart: number | null;
-    lineEnd: number | null;
-  }>
-) {
-  const labels = Array.from(
-    new Set(
-      evidenceIds
-        .map((evidenceId) => matches[evidenceId - 1])
-        .filter(Boolean)
-        .map((match) => buildInlineCitationLabel(match))
-    )
-  );
+function splitAssistantStreamChunks(content: string) {
+  const chunks =
+    content.match(/[^.!?\n]+(?:[.!?]+["')\]]*|\n|$)/g)?.map((chunk) => chunk.trimStart()) ?? [];
 
-  return labels.length > 0 ? ` ${labels.join(" ")}` : "";
+  return chunks.filter(Boolean);
 }
 
 function renderStructuredAnswer(params: {
@@ -93,10 +49,7 @@ function renderStructuredAnswer(params: {
     lineEnd: number | null;
   }>;
 }) {
-  const lead = `${params.lead.text.trim()}${buildCitationSuffix(
-    params.lead.evidenceIds,
-    params.matches
-  )}`.trim();
+  const lead = params.lead.text.trim();
 
   const bullets = params.bullets
     .map((bullet) => {
@@ -106,7 +59,7 @@ function renderStructuredAnswer(params: {
         return null;
       }
 
-      return `- ${text}${buildCitationSuffix(bullet.evidenceIds, params.matches)}`.trim();
+      return `- ${text}`.trim();
     })
     .filter(Boolean);
 
@@ -127,6 +80,117 @@ function collectUsedEvidenceIds(params: {
       ...params.bullets.flatMap((bullet) => bullet.evidenceIds)
     ])
   );
+}
+
+function buildFallbackEvidenceIds(params: {
+  generated: Awaited<ReturnType<typeof generateGroundedAnswer>> | null;
+  matchCount: number;
+}) {
+  if (
+    params.generated?.provider !== "vast-openai-compatible" ||
+    params.generated.responseKind !== "grounded" ||
+    params.generated.answerState !== "grounded_answer" ||
+    params.matchCount === 0
+  ) {
+    return [];
+  }
+
+  return Array.from({ length: Math.min(params.matchCount, 3) }, (_, index) => index + 1);
+}
+
+function buildContextualQuery(params: {
+  currentQuestion: string;
+  previousMessages: Array<{
+    role: "user" | "assistant" | "system";
+    content: string;
+  }>;
+}) {
+  const recentMessages = params.previousMessages
+    .filter((message) => message.role === "user" || message.role === "assistant")
+    .slice(-6)
+    .map((message) => {
+      const role = message.role === "assistant" ? "Awal" : "User";
+      const content = message.content.replace(/\s+/g, " ").trim().slice(0, 700);
+
+      return content ? `${role}: ${content}` : null;
+    })
+    .filter(Boolean);
+
+  if (recentMessages.length === 0) {
+    return params.currentQuestion;
+  }
+
+  return [
+    "Use the recent conversation only to resolve follow-up references like 'that', 'there', 'names', or 'it'.",
+    "Recent conversation:",
+    ...recentMessages,
+    "",
+    `Current user question: ${params.currentQuestion}`
+  ].join("\n");
+}
+
+function buildRetrievalQuery(params: {
+  currentQuestion: string;
+  previousMessages: Array<{
+    role: "user" | "assistant" | "system";
+    content: string;
+  }>;
+}) {
+  const previousUserQuestion = [...params.previousMessages]
+    .reverse()
+    .find((message) => message.role === "user" && message.content.trim() !== params.currentQuestion);
+
+  if (!previousUserQuestion) {
+    return params.currentQuestion;
+  }
+
+  return [
+    params.currentQuestion,
+    `Previous user topic: ${previousUserQuestion.content.replace(/\s+/g, " ").trim().slice(0, 220)}`
+  ].join("\n");
+}
+
+async function ensureCitationSpan(params: {
+  tx: Prisma.TransactionClient;
+  match: {
+    id: string;
+    text: string;
+    citationSpanId: string | null;
+    citationQuotedText: string | null;
+    pageStart: number | null;
+    pageEnd: number | null;
+    paragraphStart: number | null;
+    paragraphEnd: number | null;
+    lineStart: number | null;
+    lineEnd: number | null;
+  };
+}) {
+  if (params.match.citationSpanId) {
+    return params.match.citationSpanId;
+  }
+
+  const quotedText =
+    params.match.citationQuotedText?.trim() ||
+    (params.match.text.length > 360
+      ? `${params.match.text.slice(0, 357).trimEnd()}...`
+      : params.match.text);
+
+  const citationSpan = await params.tx.citationSpan.create({
+    data: {
+      chunkId: params.match.id,
+      startChar: 0,
+      endChar: Math.min(params.match.text.length, quotedText.length),
+      quotedText,
+      pageStart: params.match.pageStart,
+      pageEnd: params.match.pageEnd,
+      paragraphStart: params.match.paragraphStart,
+      paragraphEnd: params.match.paragraphEnd,
+      lineStart: params.match.lineStart,
+      lineEnd: params.match.lineEnd
+    }
+  });
+
+  return citationSpan.id;
 }
 
 function formatLocationLabel(params: {
@@ -178,6 +242,12 @@ function serializeMessage(message: {
         lineEnd: number | null;
         chunk: {
           text: string;
+          pageStart: number | null;
+          pageEnd: number | null;
+          paragraphStart: number | null;
+          paragraphEnd: number | null;
+          lineStart: number | null;
+          lineEnd: number | null;
           documentRevision: {
             document: {
               id: string;
@@ -199,22 +269,30 @@ function serializeMessage(message: {
       ? {
           state: message.answerRecord.state,
           modelName: message.answerRecord.modelName,
-          citations: message.answerRecord.citations.map((citation) => ({
-            citationOrder: citation.citationOrder,
-            quotedText: citation.citationSpan.quotedText,
-            locationLabel: formatLocationLabel(citation.citationSpan),
-            pageStart: citation.citationSpan.pageStart,
-            pageEnd: citation.citationSpan.pageEnd,
-            paragraphStart: citation.citationSpan.paragraphStart,
-            paragraphEnd: citation.citationSpan.paragraphEnd,
-            lineStart: citation.citationSpan.lineStart,
-            lineEnd: citation.citationSpan.lineEnd,
-            document: {
-              id: citation.citationSpan.chunk.documentRevision.document.id,
-              title: citation.citationSpan.chunk.documentRevision.document.title,
-              mimeType: citation.citationSpan.chunk.documentRevision.document.mimeType
-            }
-          }))
+          citations: message.answerRecord.citations.map((citation) => {
+            const location = {
+              pageStart: citation.citationSpan.pageStart ?? citation.citationSpan.chunk.pageStart,
+              pageEnd: citation.citationSpan.pageEnd ?? citation.citationSpan.chunk.pageEnd,
+              paragraphStart:
+                citation.citationSpan.paragraphStart ?? citation.citationSpan.chunk.paragraphStart,
+              paragraphEnd:
+                citation.citationSpan.paragraphEnd ?? citation.citationSpan.chunk.paragraphEnd,
+              lineStart: citation.citationSpan.lineStart ?? citation.citationSpan.chunk.lineStart,
+              lineEnd: citation.citationSpan.lineEnd ?? citation.citationSpan.chunk.lineEnd
+            };
+
+            return {
+              citationOrder: citation.citationOrder,
+              quotedText: citation.citationSpan.quotedText,
+              locationLabel: formatLocationLabel(location),
+              ...location,
+              document: {
+                id: citation.citationSpan.chunk.documentRevision.document.id,
+                title: citation.citationSpan.chunk.documentRevision.document.title,
+                mimeType: citation.citationSpan.chunk.documentRevision.document.mimeType
+              }
+            };
+          })
         }
       : null
   };
@@ -285,6 +363,7 @@ export async function POST(request: Request, context: RouteContext) {
     const { getPrisma } = await import("@/lib/prisma");
     const prisma = getPrisma();
     const { conversationId } = await context.params;
+    const streamResponse = new URL(request.url).searchParams.get("stream") === "1";
     const json = await request.json();
     const parsed = createMessageSchema.safeParse(json);
 
@@ -295,19 +374,44 @@ export async function POST(request: Request, context: RouteContext) {
     const conversation = await prisma.conversation.findUnique({
       where: { id: conversationId },
       include: {
+        messages: {
+          orderBy: {
+            createdAt: "desc"
+          },
+          take: 8,
+          select: {
+            role: true,
+            content: true
+          }
+        },
         collection: {
           include: {
             documents: {
               include: {
                 latestRevision: {
                   include: {
-                    chunks: {
+                  chunks: {
                       include: {
                         embedding: true,
                         citationSpans: {
                           take: 1,
                           orderBy: {
                             startChar: "asc"
+                          }
+                        }
+                      }
+                    },
+                    indexCards: {
+                      include: {
+                        embedding: true,
+                        chunk: {
+                          include: {
+                            citationSpans: {
+                              take: 1,
+                              orderBy: {
+                                startChar: "asc"
+                              }
+                            }
                           }
                         }
                       }
@@ -334,6 +438,9 @@ export async function POST(request: Request, context: RouteContext) {
         id: chunk.id,
         text: chunk.text,
         chunkIndex: chunk.chunkIndex,
+        evidenceSource: "chunk" as const,
+        cardKind: null,
+        cardTitle: null,
         documentId: document.id,
         documentRevisionId: chunk.documentRevisionId,
         documentTitle: document.title,
@@ -351,22 +458,77 @@ export async function POST(request: Request, context: RouteContext) {
           : null
       }))
     );
+    const candidateIndexCards = readyDocuments.flatMap((document) =>
+      (document.latestRevision?.indexCards ?? [])
+        .filter((card) => card.chunkId && card.chunk)
+        .map((card) => {
+          const aliases = Array.isArray(card.aliasesJson)
+            ? card.aliasesJson.filter((value): value is string => typeof value === "string")
+            : [];
+          const tags = Array.isArray(card.tagsJson)
+            ? card.tagsJson.filter((value): value is string => typeof value === "string")
+            : [];
+          const chunk = card.chunk!;
+          const evidenceText = [
+            card.title,
+            card.summary,
+            card.body,
+            aliases.length > 0 ? `Aliases: ${aliases.join(", ")}` : null,
+            tags.length > 0 ? `Tags: ${tags.join(", ")}` : null
+          ]
+            .filter(Boolean)
+            .join("\n");
 
+          return {
+            id: chunk.id,
+            text: evidenceText,
+            chunkIndex: chunk.chunkIndex,
+            evidenceSource: "index_card" as const,
+            cardKind: card.kind,
+            cardTitle: card.title,
+            documentId: document.id,
+            documentRevisionId: chunk.documentRevisionId,
+            documentTitle: document.title,
+            storageUri: document.latestRevision?.storageUri ?? null,
+            pageStart: card.pageStart ?? chunk.pageStart,
+            pageEnd: card.pageEnd ?? chunk.pageEnd,
+            paragraphStart: card.paragraphStart ?? chunk.paragraphStart,
+            paragraphEnd: card.paragraphEnd ?? chunk.paragraphEnd,
+            lineStart: card.lineStart ?? chunk.lineStart,
+            lineEnd: card.lineEnd ?? chunk.lineEnd,
+            citationSpanId: chunk.citationSpans[0]?.id ?? null,
+            citationQuotedText: chunk.citationSpans[0]?.quotedText ?? null,
+            embedding: Array.isArray(card.embedding?.vectorJson)
+              ? (card.embedding?.vectorJson as number[])
+              : null
+          };
+        })
+    );
+    const evidenceCandidates = [...candidateIndexCards, ...candidateChunks];
+
+    const contextualQuery = buildContextualQuery({
+      currentQuestion: parsed.data.content,
+      previousMessages: [...conversation.messages].reverse()
+    });
+    const retrievalQuery = buildRetrievalQuery({
+      currentQuestion: parsed.data.content,
+      previousMessages: [...conversation.messages].reverse()
+    });
     const aiConfig = getAiRuntimeConfig();
     let queryEmbedding: number[] | null = null;
     let rerankResult: Awaited<ReturnType<typeof rerankEvidence>> | null = null;
 
-    if (aiConfig.hasEmbeddingProvider && candidateChunks.some((chunk) => chunk.embedding)) {
+    if (aiConfig.hasEmbeddingProvider && evidenceCandidates.some((chunk) => chunk.embedding)) {
       try {
-        queryEmbedding = (await generateEmbeddings([parsed.data.content])).data[0]?.embedding ?? null;
+        queryEmbedding = (await generateEmbeddings([retrievalQuery])).data[0]?.embedding ?? null;
       } catch {
         queryEmbedding = null;
       }
     }
 
     const initialMatches = rankChunks({
-      query: parsed.data.content,
-      chunks: candidateChunks,
+      query: retrievalQuery,
+      chunks: evidenceCandidates,
       queryEmbedding,
       limit: 10
     });
@@ -374,7 +536,7 @@ export async function POST(request: Request, context: RouteContext) {
     if (aiConfig.hasRerankProvider && initialMatches.length > 0) {
       try {
         rerankResult = await rerankEvidence({
-          query: parsed.data.content,
+          query: retrievalQuery,
           matches: initialMatches.map((match) => ({
             text: match.text,
             chunkIndex: match.chunkIndex,
@@ -408,7 +570,7 @@ export async function POST(request: Request, context: RouteContext) {
     if (aiConfig.hasGenerationProvider) {
       try {
         generated = await generateGroundedAnswer({
-          query: parsed.data.content,
+          query: contextualQuery,
           matches: rankedMatches.map((match) => ({
             text: match.text,
             chunkIndex: match.chunkIndex,
@@ -510,7 +672,7 @@ export async function POST(request: Request, context: RouteContext) {
           data: {
             conversationId,
             messageId: assistantMessage.id,
-            queryText: parsed.data.content,
+            queryText: retrievalQuery,
             retrievalMode: rerankResult
               ? "lexical+dense+rerank"
               : queryEmbedding
@@ -540,17 +702,30 @@ export async function POST(request: Request, context: RouteContext) {
           });
         }
 
-        for (const evidenceId of usedEvidenceIds) {
+        const citationEvidenceIds =
+          usedEvidenceIds.length > 0
+            ? usedEvidenceIds
+            : buildFallbackEvidenceIds({
+                generated,
+                matchCount: rankedMatches.length
+              });
+
+        for (const evidenceId of citationEvidenceIds) {
           const match = rankedMatches[evidenceId - 1];
 
-          if (!match?.citationSpanId) {
+          if (!match) {
             continue;
           }
+
+          const citationSpanId = await ensureCitationSpan({
+            tx,
+            match
+          });
 
           await tx.answerCitation.create({
             data: {
               answerRecordId: answerRecord.id,
-              citationSpanId: match.citationSpanId,
+              citationSpanId,
               citationOrder: evidenceId
             }
           });
@@ -561,14 +736,15 @@ export async function POST(request: Request, context: RouteContext) {
             continue;
           }
 
-          if (!match.citationSpanId) {
-            continue;
-          }
+          const citationSpanId = await ensureCitationSpan({
+            tx,
+            match
+          });
 
           await tx.answerCitation.create({
             data: {
               answerRecordId: answerRecord.id,
-              citationSpanId: match.citationSpanId,
+              citationSpanId,
               citationOrder: index + 1
             }
           });
@@ -626,16 +802,57 @@ export async function POST(request: Request, context: RouteContext) {
       (message) => message.id === result.assistantMessage.id
     );
 
-    return ok(
-      {
-        userMessage: userMessage ? serializeMessage(userMessage) : result.userMessage,
-        assistantMessage: assistantMessage
-          ? serializeMessage(assistantMessage)
-          : result.assistantMessage,
-        answerRecord: result.answerRecord
-      },
-      { status: 201 }
-    );
+    const payload = {
+      userMessage: userMessage ? serializeMessage(userMessage) : result.userMessage,
+      assistantMessage: assistantMessage
+        ? serializeMessage(assistantMessage)
+        : result.assistantMessage,
+      answerRecord: result.answerRecord
+    };
+
+    if (!streamResponse) {
+      return ok(payload, { status: 201 });
+    }
+
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      async start(controller) {
+        const send = (event: string, data: unknown) =>
+          controller.enqueue(encoder.encode(encodeSseEvent(event, data)));
+
+        try {
+          send("status", { stage: "queued" });
+          send("user_message", payload.userMessage);
+          send("status", { stage: "generating" });
+          send("status", { stage: "streaming" });
+
+          const chunks = splitAssistantStreamChunks(payload.assistantMessage.content);
+
+          for (const chunk of chunks) {
+            send("assistant_delta", { delta: chunk });
+            await new Promise((resolve) => setTimeout(resolve, 18));
+          }
+
+          send("done", payload);
+        } catch (streamError) {
+          send("error", {
+            message:
+              streamError instanceof Error ? streamError.message : "Streaming failed."
+          });
+        } finally {
+          controller.close();
+        }
+      }
+    });
+
+    return new Response(stream, {
+      status: 201,
+      headers: {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive"
+      }
+    });
   } catch (error) {
     if (error instanceof Error && error.message.includes("Foreign key constraint")) {
       return badRequest("Invalid conversation message request.");

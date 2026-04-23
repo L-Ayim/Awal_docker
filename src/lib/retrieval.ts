@@ -2,6 +2,9 @@ type ChunkCandidate = {
   id: string;
   text: string;
   chunkIndex: number;
+  evidenceSource?: "chunk" | "index_card";
+  cardKind?: string | null;
+  cardTitle?: string | null;
   documentId: string;
   documentRevisionId: string;
   documentTitle: string;
@@ -21,6 +24,8 @@ type RankedChunk = ChunkCandidate & {
   denseScore: number | null;
   lexicalScore: number;
   titleScore: number;
+  cardTitleScore: number;
+  metadataScore: number;
   phraseScore: number;
   hybridScore: number;
   rerankScore: number | null;
@@ -78,11 +83,13 @@ const STOP_WORDS = new Set([
   "an",
   "and",
   "are",
+  "any",
   "can",
   "do",
   "does",
   "for",
   "give",
+  "have",
   "hello",
   "help",
   "hey",
@@ -101,6 +108,7 @@ const STOP_WORDS = new Set([
   "on",
   "or",
   "please",
+  "related",
   "say",
   "tell",
   "thanks",
@@ -126,10 +134,23 @@ const STOP_WORDS = new Set([
 ]);
 
 function tokenize(text: string) {
-  return normalize(text)
+  const tokens = normalize(text)
     .split(/[^a-z0-9]+/)
     .map((token) => token.trim())
     .filter((token) => token.length >= 3 && !STOP_WORDS.has(token));
+  const expanded = new Set(tokens);
+
+  for (const token of tokens) {
+    if (token.endsWith("ies") && token.length > 4) {
+      expanded.add(`${token.slice(0, -3)}y`);
+    } else if (token.endsWith("es") && token.length > 4) {
+      expanded.add(token.slice(0, -2));
+    } else if (token.endsWith("s") && token.length > 3) {
+      expanded.add(token.slice(0, -1));
+    }
+  }
+
+  return Array.from(expanded);
 }
 
 function countAlphaNumeric(text: string) {
@@ -232,16 +253,26 @@ export function rankChunks(params: {
         params.queryEmbedding && chunk.embedding
           ? cosineSimilarity(params.queryEmbedding, chunk.embedding)
           : null;
+      const cardTitleScore = computeTokenOverlapScore(queryTokens, chunk.cardTitle ?? "");
+      const metadataText = normalize(
+        [chunk.cardKind ?? "", chunk.cardTitle ?? "", chunk.documentTitle].join(" ")
+      );
+      const metadataScore = computeTokenOverlapScore(queryTokens, metadataText);
+      const indexCardBoost = chunk.evidenceSource === "index_card" ? 0.08 + metadataScore * 0.32 : 0;
       const hybridScore =
         normalizedLexical * (denseScore !== null ? 0.35 : 0.55) +
-        titleScore * 0.3 +
+        titleScore * 0.22 +
+        metadataScore * 0.16 +
         phraseScore * 0.25 +
-        Math.max(denseScore ?? 0, 0) * (denseScore !== null ? 0.1 : 0);
+        Math.max(denseScore ?? 0, 0) * (denseScore !== null ? 0.1 : 0) +
+        indexCardBoost;
 
       return {
         ...chunk,
         lexicalScore,
         titleScore,
+        cardTitleScore,
+        metadataScore,
         phraseScore,
         denseScore,
         hybridScore,
@@ -249,11 +280,12 @@ export function rankChunks(params: {
       } satisfies RankedChunk;
     })
     .filter(
-      (chunk) =>
-        chunk.lexicalScore > 0 ||
-        chunk.titleScore >= 0.34 ||
-        chunk.phraseScore > 0 ||
-        (chunk.denseScore ?? 0) >= 0.35
+        (chunk) =>
+          chunk.lexicalScore > 0 ||
+          chunk.titleScore >= 0.34 ||
+          chunk.cardTitleScore >= 0.34 ||
+          chunk.phraseScore > 0 ||
+          (chunk.denseScore ?? 0) >= 0.35
     )
     .sort((left, right) => right.hybridScore - left.hybridScore);
 

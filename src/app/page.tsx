@@ -14,11 +14,14 @@ export default function HomePage() {
     setActiveSessionId,
     isBootstrapping,
     isSending,
+    isUploading,
     error,
     createNewSession,
     deleteSession,
     updateSessionTitle,
-    sendMessage
+    sendMessage,
+    stopSending,
+    uploadDocuments
   } = useSessions();
   const [input, setInput] = useState("");
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
@@ -36,7 +39,7 @@ export default function HomePage() {
     if (!activeSession || !input.trim() || isSending) return;
     const content = input.trim();
     setInput("");
-    await sendMessage(content);
+    void sendMessage(content);
   }
 
   return (
@@ -57,11 +60,13 @@ export default function HomePage() {
             setSidebarTitleDraft(title);
           }}
           onDeleteSession={deleteSession}
+          onUploadDocuments={uploadDocuments}
           onSidebarTitleDraftChange={setSidebarTitleDraft}
           onCommitEdit={(id, title) => {
             updateSessionTitle(id, title);
             setEditingSessionId(null);
           }}
+          isUploading={isUploading}
         />
 
         <section className="chat-shell">
@@ -73,12 +78,15 @@ export default function HomePage() {
             session={activeSession}
             isBootstrapping={isBootstrapping}
             error={error}
+            isSending={isSending}
+            onResendMessage={(content) => void sendMessage(content)}
           />
           <ChatInput
             input={input}
             isSending={isSending}
             onInputChange={setInput}
             onSendMessage={handleSendMessage}
+            onStopSending={stopSending}
           />
         </section>
       </section>

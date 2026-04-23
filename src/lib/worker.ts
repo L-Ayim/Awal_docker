@@ -1,19 +1,34 @@
-import { readFile } from "fs/promises";
-import { fileURLToPath } from "url";
-import { generateEmbeddings, getAiRuntimeConfig } from "@/lib/ai-provider";
+import {
+  generateDocumentMemoryObjects,
+  generateEmbeddings,
+  getAiRuntimeConfig
+} from "@/lib/ai-provider";
 import { chunkSectionBodies } from "@/lib/chunking";
 import { extractWithRemoteDocling, shouldUseDocling } from "@/lib/document-processor";
 import { detectParser, parseDocumentText } from "@/lib/ingestion-parser";
+import {
+  buildFallbackDocumentIndexCards,
+  buildIndexCardSearchText,
+  materializeGeneratedIndexCards
+} from "@/lib/index-cards";
 import { buildPdfCitationIndex, locateChunkInPdf } from "@/lib/pdf-citations";
+import { readStoredBytes } from "@/lib/storage";
 
-async function loadRevisionText(storageUri: string | null) {
-  if (!storageUri || !storageUri.startsWith("file://")) {
-    throw new Error("Unsupported storage URI.");
+const MEMORY_OBJECT_BATCH_SIZE = 6;
+
+function chunkArray<T>(items: T[], size: number) {
+  const batches: T[][] = [];
+
+  for (let index = 0; index < items.length; index += size) {
+    batches.push(items.slice(index, index + size));
   }
 
-  const absolutePath = fileURLToPath(storageUri);
-  const buffer = await readFile(absolutePath);
-  return buffer.toString("utf8");
+  return batches;
+}
+
+async function loadRevisionText(storageUri: string | null) {
+  const stored = await readStoredBytes(storageUri);
+  return stored.bytes.toString("utf8");
 }
 
 async function extractParsedDocument(params: {
@@ -149,6 +164,12 @@ export async function processQueuedIngestionJob() {
       }
     }
 
+    await prisma.documentIndexCard.deleteMany({
+      where: {
+        documentRevisionId: queuedJob.documentRevisionId
+      }
+    });
+
     await prisma.chunk.deleteMany({
       where: {
         documentRevisionId: queuedJob.documentRevisionId
@@ -179,6 +200,13 @@ export async function processQueuedIngestionJob() {
     const createdChunks: Array<{
       id: string;
       chunkIndex: number;
+      text: string;
+      pageStart: number | null;
+      pageEnd: number | null;
+      paragraphStart: number | null;
+      paragraphEnd: number | null;
+      lineStart: number | null;
+      lineEnd: number | null;
     }> = [];
 
     for (const [index, chunk] of chunkEntries.entries()) {
@@ -220,7 +248,14 @@ export async function processQueuedIngestionJob() {
 
       createdChunks.push({
         id: createdChunk.id,
-        chunkIndex: index
+        chunkIndex: index,
+        text: chunk.text,
+        pageStart: reference?.pageStart ?? null,
+        pageEnd: reference?.pageEnd ?? null,
+        paragraphStart: reference?.paragraphStart ?? null,
+        paragraphEnd: reference?.paragraphEnd ?? null,
+        lineStart: reference?.lineStart ?? null,
+        lineEnd: reference?.lineEnd ?? null
       });
     }
 
@@ -245,6 +280,120 @@ export async function processQueuedIngestionJob() {
       }
     }
 
+    const chunkInputs = createdChunks.map((chunk) => ({
+      ...chunk,
+      documentTitle: queuedJob.documentRevision.document.title
+    }));
+    let generatedMemoryObjects: Array<{
+      chunkIndex: number;
+      kind: string;
+      title: string;
+      body: string;
+      summary: string;
+      tags: string[];
+      aliases: string[];
+    }> = [];
+    let memoryObjectModelName: string | null = null;
+    let memoryObjectFailureReason: string | null = null;
+
+    if (aiConfig.hasGenerationProvider && chunkInputs.length > 0) {
+      try {
+        const batches = chunkArray(chunkInputs, MEMORY_OBJECT_BATCH_SIZE);
+
+        for (const batch of batches) {
+          const generated = await generateDocumentMemoryObjects({
+            documentTitle: queuedJob.documentRevision.document.title,
+            chunks: batch.map((chunk) => ({
+              chunkIndex: chunk.chunkIndex,
+              text: chunk.text,
+              pageStart: chunk.pageStart,
+              pageEnd: chunk.pageEnd,
+              paragraphStart: chunk.paragraphStart,
+              paragraphEnd: chunk.paragraphEnd,
+              lineStart: chunk.lineStart,
+              lineEnd: chunk.lineEnd
+            }))
+          });
+
+          generatedMemoryObjects.push(...generated.objects);
+          memoryObjectModelName = generated.modelName;
+        }
+      } catch (error) {
+        memoryObjectFailureReason =
+          error instanceof Error ? error.message : "memory_object_generation_failed";
+      }
+    }
+
+    const indexCards =
+      generatedMemoryObjects.length > 0
+        ? materializeGeneratedIndexCards({
+            documentTitle: queuedJob.documentRevision.document.title,
+            chunks: chunkInputs,
+            generatedObjects: generatedMemoryObjects
+          })
+        : buildFallbackDocumentIndexCards({
+            documentTitle: queuedJob.documentRevision.document.title,
+            chunks: chunkInputs
+          });
+    let indexCardEmbeddingPayload: Awaited<ReturnType<typeof generateEmbeddings>> | null = null;
+    let indexCardEmbeddingFailureReason: string | null = null;
+
+    if (aiConfig.hasEmbeddingProvider && indexCards.length > 0) {
+      try {
+        indexCardEmbeddingPayload = await generateEmbeddings(
+          indexCards.map((card) =>
+            buildIndexCardSearchText({
+              title: card.title,
+              body: card.body,
+              summary: card.summary,
+              tags: card.tags,
+              aliases: card.aliases
+            })
+          )
+        );
+      } catch (error) {
+        indexCardEmbeddingFailureReason =
+          error instanceof Error ? error.message : "index_card_embedding_provider_failed";
+      }
+    }
+
+    for (const [index, card] of indexCards.entries()) {
+      const createdCard = await prisma.documentIndexCard.create({
+        data: {
+          documentRevisionId: queuedJob.documentRevisionId,
+          chunkId: card.chunkId,
+          kind: card.kind,
+          title: card.title,
+          body: card.body,
+          summary: card.summary,
+          tagsJson: card.tags,
+          aliasesJson: card.aliases,
+          searchText: buildIndexCardSearchText(card),
+          pageStart: card.pageStart,
+          pageEnd: card.pageEnd,
+          paragraphStart: card.paragraphStart,
+          paragraphEnd: card.paragraphEnd,
+          lineStart: card.lineStart,
+          lineEnd: card.lineEnd
+        }
+      });
+
+      const vector = indexCardEmbeddingPayload?.data.find((entry) => entry.index === index);
+
+      if (!vector || !indexCardEmbeddingPayload) {
+        continue;
+      }
+
+      await prisma.documentIndexCardEmbedding.create({
+        data: {
+          indexCardId: createdCard.id,
+          modelName: indexCardEmbeddingPayload.model,
+          dimensions: indexCardEmbeddingPayload.dimensions,
+          vectorJson: vector.embedding
+        }
+      });
+    }
+
     await prisma.documentRevision.update({
       where: { id: queuedJob.documentRevisionId },
       data: {
@@ -257,6 +406,18 @@ export async function processQueuedIngestionJob() {
             ? ` Embedded ${embeddingPayload.data.length} chunk(s) with ${embeddingPayload.model}.`
             : embeddingFailureReason
               ? ` Embedding skipped: ${embeddingFailureReason}.`
+              : "") +
+          (generatedMemoryObjects.length > 0
+            ? ` Generated ${generatedMemoryObjects.length} semantic memory object(s)` +
+              (memoryObjectModelName ? ` with ${memoryObjectModelName}` : "") +
+              ` and materialized ${indexCards.length} index card(s).`
+            : memoryObjectFailureReason
+              ? ` Semantic memory generation skipped: ${memoryObjectFailureReason}. Built ${indexCards.length} heuristic index card(s).`
+              : ` Built ${indexCards.length} heuristic index card(s).`) +
+          (indexCardEmbeddingPayload
+            ? ` Embedded ${indexCardEmbeddingPayload.data.length} index card(s) with ${indexCardEmbeddingPayload.model}.`
+            : indexCardEmbeddingFailureReason
+              ? ` Index card embedding skipped: ${indexCardEmbeddingFailureReason}.`
               : "")
       }
     });

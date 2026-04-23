@@ -1,5 +1,6 @@
 "use client";
 
+import { Send, Square } from "lucide-react";
 import { useEffect, useRef } from "react";
 
 type ChatInputProps = {
@@ -7,13 +8,15 @@ type ChatInputProps = {
   isSending: boolean;
   onInputChange: (value: string) => void;
   onSendMessage: () => void;
+  onStopSending: () => void;
 };
 
 export function ChatInput({
   input,
   isSending,
   onInputChange,
-  onSendMessage
+  onSendMessage,
+  onStopSending
 }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -48,29 +51,12 @@ export function ChatInput({
         />
         <button
           className="composer-send-button"
-          type="submit"
-          disabled={isSending || !input.trim()}
-          aria-label={isSending ? "Sending" : "Send message"}
+          type={isSending ? "button" : "submit"}
+          disabled={!isSending && !input.trim()}
+          onClick={isSending ? onStopSending : undefined}
+          aria-label={isSending ? "Stop response" : "Send message"}
         >
-          {isSending ? (
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path
-                d="M8 8h8v8H8z"
-                fill="currentColor"
-              />
-            </svg>
-          ) : (
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path
-                d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          )}
+          {isSending ? <Square aria-hidden="true" /> : <Send aria-hidden="true" />}
         </button>
       </div>
     </form>

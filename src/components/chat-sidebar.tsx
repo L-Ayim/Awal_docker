@@ -1,5 +1,7 @@
 "use client";
 
+import { useRef } from "react";
+import { FolderUp, Pencil, Plus, Trash2, Upload } from "lucide-react";
 import type { ChatSession } from "@/types/chat";
 
 type ChatSidebarProps = {
@@ -8,9 +10,11 @@ type ChatSidebarProps = {
   editingSessionId: string | null;
   sidebarTitleDraft: string;
   isBootstrapping: boolean;
+  isUploading: boolean;
   isOpen: boolean;
   onClose: () => void;
   onNewChat: () => void | Promise<void>;
+  onUploadDocuments: (files: FileList | File[]) => void | Promise<void>;
   onSelectSession: (id: string) => void;
   onStartEditing: (id: string, title: string) => void;
   onDeleteSession: (id: string) => void | Promise<void>;
@@ -24,15 +28,20 @@ export function ChatSidebar({
   editingSessionId,
   sidebarTitleDraft,
   isBootstrapping,
+  isUploading,
   isOpen,
   onClose,
   onNewChat,
+  onUploadDocuments,
   onSelectSession,
   onStartEditing,
   onDeleteSession,
   onSidebarTitleDraftChange,
   onCommitEdit
 }: ChatSidebarProps) {
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const folderInputRef = useRef<HTMLInputElement | null>(null);
+
   return (
     <>
       {isOpen ? <button className="mobile-sidebar-overlay" onClick={onClose} aria-label="Close sidebar" /> : null}
@@ -47,21 +56,67 @@ export function ChatSidebar({
         </div>
 
         <button
+          className="sidebar-upload"
+          onClick={() => fileInputRef.current?.click()}
+          type="button"
+          disabled={isUploading}
+          aria-label="Upload documents"
+        >
+          <Upload aria-hidden="true" />
+          <span>{isUploading ? "Uploading..." : "Upload Docs"}</span>
+        </button>
+
+        <button
+          className="sidebar-upload"
+          onClick={() => folderInputRef.current?.click()}
+          type="button"
+          disabled={isUploading}
+          aria-label="Upload folder"
+        >
+          <FolderUp aria-hidden="true" />
+          <span>{isUploading ? "Uploading..." : "Upload Folder"}</span>
+        </button>
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          hidden
+          onChange={(event) => {
+            const files = event.target.files;
+            if (files && files.length > 0) {
+              void onUploadDocuments(files);
+            }
+            event.currentTarget.value = "";
+          }}
+        />
+
+        <input
+          ref={folderInputRef}
+          type="file"
+          multiple
+          hidden
+          onChange={(event) => {
+            const files = event.target.files;
+            if (files && files.length > 0) {
+              void onUploadDocuments(files);
+            }
+            event.currentTarget.value = "";
+          }}
+          {...({
+            webkitdirectory: "",
+            directory: ""
+          } as Record<string, string>)}
+        />
+
+        <button
           className="sidebar-new-chat"
           onClick={() => void onNewChat()}
           type="button"
           disabled={isBootstrapping}
           aria-label="New chat"
         >
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path
-              d="M12 5v14M5 12h14"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-            />
-          </svg>
+          <Plus aria-hidden="true" />
           <span>New Chat</span>
         </button>
 
@@ -121,33 +176,15 @@ export function ChatSidebar({
                       onClick={() => onStartEditing(session.id, session.title)}
                       aria-label={`Edit ${session.title}`}
                     >
-                      <svg viewBox="0 0 24 24" aria-hidden="true">
-                        <path
-                          d="M4 20h4l10-10-4-4L4 16v4zM14 6l4 4"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
+                      <Pencil aria-hidden="true" />
                     </button>
                     <button
-                      className="sidebar-icon-button"
+                      className="sidebar-icon-button delete-button"
                       type="button"
                       onClick={() => void onDeleteSession(session.id)}
                       aria-label={`Delete ${session.title}`}
                     >
-                      <svg viewBox="0 0 24 24" aria-hidden="true">
-                        <path
-                          d="M6 7h12M9 7V5h6v2m-7 3v7m4-7v7m4-7v7M8 7l1 12h6l1-12"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
+                      <Trash2 aria-hidden="true" />
                     </button>
                   </div>
                 </div>

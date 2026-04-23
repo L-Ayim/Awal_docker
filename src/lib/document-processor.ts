@@ -1,7 +1,6 @@
-import { readFile } from "fs/promises";
-import { fileURLToPath } from "url";
 import { execFile } from "child_process";
 import { promisify } from "util";
+import { materializeStoredFile } from "@/lib/storage";
 
 const execFileAsync = promisify(execFile);
 
@@ -77,20 +76,6 @@ export function getDocumentProcessorRuntimeStatus() {
   };
 }
 
-async function loadStoredFile(storageUri: string | null) {
-  if (!storageUri || !storageUri.startsWith("file://")) {
-    throw new Error("Document processor currently requires a file:// storage URI.");
-  }
-
-  const absolutePath = fileURLToPath(storageUri);
-  const bytes = await readFile(absolutePath);
-
-  return {
-    absolutePath,
-    bytes
-  };
-}
-
 async function extractWithRemoteDoclingViaCurl(params: {
   absolutePath: string;
   title: string;
@@ -140,13 +125,17 @@ export async function extractWithRemoteDocling(params: {
     throw new Error("Remote document processor is not configured.");
   }
 
-  const { absolutePath, bytes } = await loadStoredFile(params.storageUri);
-  const filename = absolutePath.split(/[\\/]/).pop() || `${params.title}.bin`;
+  const materialized = await materializeStoredFile({
+    storageUri: params.storageUri,
+    filenameHint: params.title
+  });
+  const filename = materialized.filename || materialized.absolutePath.split(/[\\/]/).pop() || `${params.title}.bin`;
 
-  async function requestExtraction(ocrMode: string) {
+  try {
+    async function requestExtraction(ocrMode: string) {
     if (process.platform === "win32" && config.apiKey) {
       return extractWithRemoteDoclingViaCurl({
-        absolutePath,
+        absolutePath: materialized.absolutePath,
         title: params.title,
         mimeType: params.mimeType,
         baseUrl: config.baseUrl,
@@ -156,13 +145,13 @@ export async function extractWithRemoteDocling(params: {
       });
     }
 
-    const formData = new FormData();
-    formData.set(
-      "file",
-      new File([new Uint8Array(bytes)], filename, {
-        type: params.mimeType || "application/octet-stream"
-      })
-    );
+      const formData = new FormData();
+      formData.set(
+        "file",
+      new File([new Uint8Array(materialized.bytes)], filename, {
+          type: params.mimeType || "application/octet-stream"
+        })
+      );
     formData.set("title", params.title);
     formData.set("ocr_mode", ocrMode);
 
@@ -193,38 +182,41 @@ export async function extractWithRemoteDocling(params: {
     }
   }
 
-  const firstPassText = await requestExtraction("text-first");
-  let parsed = JSON.parse(firstPassText) as Partial<DoclingExtractionResult>;
+    const firstPassText = await requestExtraction("text-first");
+    let parsed = JSON.parse(firstPassText) as Partial<DoclingExtractionResult>;
 
-  if (typeof parsed.markdown === "string" && isWeakMarkdown(parsed.markdown)) {
-    const ocrPassText = await requestExtraction("force-ocr");
-    const ocrParsed = JSON.parse(ocrPassText) as Partial<DoclingExtractionResult>;
+    if (typeof parsed.markdown === "string" && isWeakMarkdown(parsed.markdown)) {
+      const ocrPassText = await requestExtraction("force-ocr");
+      const ocrParsed = JSON.parse(ocrPassText) as Partial<DoclingExtractionResult>;
 
-    if (typeof ocrParsed.markdown === "string" && !isWeakMarkdown(ocrParsed.markdown)) {
-      parsed = {
-        ...ocrParsed,
-        qualityNotes:
-          typeof ocrParsed.qualityNotes === "string" && ocrParsed.qualityNotes.length > 0
-            ? `${ocrParsed.qualityNotes} Retried with OCR after weak text-first extraction.`
-            : "Converted with remote Docling (force-ocr). Retried after weak text-first extraction."
-      };
+      if (typeof ocrParsed.markdown === "string" && !isWeakMarkdown(ocrParsed.markdown)) {
+        parsed = {
+          ...ocrParsed,
+          qualityNotes:
+            typeof ocrParsed.qualityNotes === "string" && ocrParsed.qualityNotes.length > 0
+              ? `${ocrParsed.qualityNotes} Retried with OCR after weak text-first extraction.`
+              : "Converted with remote Docling (force-ocr). Retried after weak text-first extraction."
+        };
+      }
     }
-  }
 
-  if (!parsed.markdown || typeof parsed.markdown !== "string") {
-    throw new Error("Remote document processor did not return Markdown output.");
-  }
+    if (!parsed.markdown || typeof parsed.markdown !== "string") {
+      throw new Error("Remote document processor did not return Markdown output.");
+    }
 
-  return {
-    title: parsed.title || params.title,
-    markdown: parsed.markdown,
-    pageCount:
-      typeof parsed.pageCount === "number" && Number.isFinite(parsed.pageCount)
-        ? parsed.pageCount
-        : null,
-    qualityNotes:
-      typeof parsed.qualityNotes === "string" && parsed.qualityNotes.length > 0
-        ? parsed.qualityNotes
-        : "Converted with remote Docling."
-  };
+    return {
+      title: parsed.title || params.title,
+      markdown: parsed.markdown,
+      pageCount:
+        typeof parsed.pageCount === "number" && Number.isFinite(parsed.pageCount)
+          ? parsed.pageCount
+          : null,
+      qualityNotes:
+        typeof parsed.qualityNotes === "string" && parsed.qualityNotes.length > 0
+          ? parsed.qualityNotes
+          : "Converted with remote Docling."
+    };
+  } finally {
+    await materialized.cleanup();
+  }
 }

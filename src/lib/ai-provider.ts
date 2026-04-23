@@ -32,6 +32,16 @@ type GenerationResult = {
   provider: "vast-openai-compatible" | "local-fallback";
 };
 
+type MemoryObject = {
+  chunkIndex: number;
+  kind: string;
+  title: string;
+  body: string;
+  summary: string;
+  tags: string[];
+  aliases: string[];
+};
+
 const answerSegmentSchema = z.union([
   z.string().trim().min(1).max(1200),
   z.object({
@@ -52,6 +62,20 @@ const structuredAnswerSchema = z.object({
   responseKind: z.enum(["conversational", "grounded", "insufficient_evidence"]),
   lead: answerSegmentSchema,
   bullets: z.array(bulletSegmentSchema).max(4).default([])
+});
+
+const memoryObjectSchema = z.object({
+  chunkIndex: z.number().int().nonnegative(),
+  kind: z.string().trim().min(2).max(40),
+  title: z.string().trim().min(2).max(180),
+  body: z.string().trim().min(12).max(1600),
+  summary: z.string().trim().min(8).max(360),
+  tags: z.array(z.string().trim().min(1).max(40)).max(8).default([]),
+  aliases: z.array(z.string().trim().min(1).max(120)).max(8).default([])
+});
+
+const memoryObjectResponseSchema = z.object({
+  objects: z.array(memoryObjectSchema).max(32).default([])
 });
 
 function trimTrailingSlash(value: string) {
@@ -112,11 +136,12 @@ function buildEvidencePayload(query: string, matches: EvidenceMatch[]) {
       "Return JSON with this exact shape:",
       '{"responseKind":"conversational|grounded|insufficient_evidence","lead":{"text":"...","evidenceIds":[]},"bullets":[{"text":"...","evidenceIds":[1]}]}',
       "",
-      "Rules:",
-      "- Decide the user's intent yourself.",
-      "- If the user is making casual conversation such as a greeting, a thank-you, or a simple check-in, use responseKind conversational.",
-      "- If the user is asking for document-backed facts and there is no usable evidence, use responseKind insufficient_evidence.",
-      "- Do not invent document facts.",
+    "Rules:",
+    "- Decide the user's intent yourself.",
+    "- If the user is making casual conversation such as a greeting, a thank-you, or a simple check-in, use responseKind conversational.",
+      "- If the user asks about anything that is not represented in the user's documents, use responseKind insufficient_evidence and politely say you can only answer from the processed documents.",
+    "- Do not invent document facts.",
+      "- Do not answer from general knowledge, even for common public topics.",
       "- Do not include citations in the text. Put only evidence ids in evidenceIds arrays.",
       "- If responseKind is conversational or insufficient_evidence, evidenceIds must be empty arrays.",
       "- Return JSON only."
@@ -169,7 +194,8 @@ function buildEvidencePayload(query: string, matches: EvidenceMatch[]) {
     "- If the user is making casual conversation, use responseKind conversational and answer naturally in one short sentence.",
     "- If the user is asking for document-backed information, think through which evidence candidates are truly relevant before answering.",
     "- Use responseKind grounded only when the supplied evidence is enough to support the answer.",
-    "- Use responseKind insufficient_evidence when the evidence is missing, weak, or not directly on point.",
+    "- Use responseKind insufficient_evidence when the evidence is missing, weak, not directly on point, or the user asks about a general outside topic.",
+    "- Do not answer outside-knowledge questions from memory. For those, politely say you can only answer from the processed documents.",
     "- The lead should be one direct sentence.",
     "- Bullets are optional, but use at most 3 short bullets.",
     "- Do not include citations in the text. Put only evidence ids in evidenceIds arrays.",
@@ -254,10 +280,10 @@ function parseStructuredAnswer(content: string, matchCount: number) {
     return {
       responseKind: "insufficient_evidence" as const,
       lead: {
-        text: "I couldn't find enough grounded evidence in the processed documents to answer that confidently.",
+        text: lead.text,
         evidenceIds: []
       },
-      bullets: []
+      bullets: bullets.map((bullet) => ({ ...bullet, evidenceIds: [] }))
     };
   }
 
@@ -395,7 +421,7 @@ export async function generateGroundedAnswer(params: {
     {
       role: "system" as const,
       content:
-        "You are Awal. Decide whether the user needs a conversational reply, a grounded document answer, or an insufficient-evidence response. When evidence candidates are supplied, think through which ones are actually relevant before answering. The runtime, not you, will render final citations, so never write citations in the answer text. Return JSON only, matching the requested schema exactly. Do not reveal chain-of-thought. Do not output <think> tags or hidden reasoning."
+        "You are Awal, a friendly assistant that answers from the user's processed documents. You may respond naturally to greetings and simple social check-ins, but factual answers must be grounded only in the supplied document evidence. If the user asks about a topic outside the documents, do not use general knowledge; respond with insufficient_evidence and politely say you can only answer from the processed documents. When evidence candidates are supplied, think through which ones are actually relevant before answering. The runtime, not you, will render final citations, so never write citations in the answer text. Return JSON only, matching the requested schema exactly. Do not reveal chain-of-thought. Do not output <think> tags or hidden reasoning."
     },
     {
       role: "user" as const,
@@ -447,8 +473,7 @@ export async function generateGroundedAnswer(params: {
     return {
       responseKind: "insufficient_evidence",
       lead: {
-        text:
-        "I couldn't find enough grounded evidence in the processed documents to answer that confidently.",
+        text: parsed.lead.text,
         evidenceIds: []
       },
       bullets: [],
@@ -468,5 +493,129 @@ export async function generateGroundedAnswer(params: {
         : "insufficient_evidence",
     modelName: json.model || config.llmModel,
     provider: "vast-openai-compatible"
+  };
+}
+
+export async function generateDocumentMemoryObjects(params: {
+  documentTitle: string;
+  chunks: Array<{
+    chunkIndex: number;
+    text: string;
+    pageStart: number | null;
+    pageEnd: number | null;
+    paragraphStart: number | null;
+    paragraphEnd: number | null;
+    lineStart: number | null;
+    lineEnd: number | null;
+  }>;
+}) {
+  const config = getAiRuntimeConfig();
+
+  if (!config.hasGenerationProvider || !config.generationBaseUrl || params.chunks.length === 0) {
+    return {
+      objects: [] as MemoryObject[],
+      modelName: null,
+      provider: "local-fallback" as const
+    };
+  }
+
+  const chunkPayload = params.chunks
+    .map((chunk) => {
+      const location = [
+        chunk.pageStart !== null
+          ? chunk.pageEnd !== null && chunk.pageEnd !== chunk.pageStart
+            ? `pages ${chunk.pageStart}-${chunk.pageEnd}`
+            : `page ${chunk.pageStart}`
+          : null,
+        chunk.paragraphStart !== null
+          ? chunk.paragraphEnd !== null && chunk.paragraphEnd !== chunk.paragraphStart
+            ? `paragraphs ${chunk.paragraphStart}-${chunk.paragraphEnd}`
+            : `paragraph ${chunk.paragraphStart}`
+          : null,
+        chunk.lineStart !== null
+          ? chunk.lineEnd !== null && chunk.lineEnd !== chunk.lineStart
+            ? `lines ${chunk.lineStart}-${chunk.lineEnd}`
+            : `line ${chunk.lineStart}`
+          : null
+      ]
+        .filter(Boolean)
+        .join(", ");
+
+      return [
+        `Chunk ${chunk.chunkIndex}`,
+        location ? `Location: ${location}` : null,
+        chunk.text
+      ]
+        .filter(Boolean)
+        .join("\n");
+    })
+    .join("\n\n");
+
+  const messages = [
+    {
+      role: "system" as const,
+      content:
+        "You are building a semantic memory layer for document retrieval. Extract durable memory objects from the supplied document chunks. Do not use a fixed taxonomy; choose short, reusable kind labels that fit the source content such as summary, entity, role, obligation, fact, definition, relationship, table_row, heading, observation, approval, or procedure_step. Only emit objects that are directly supported by the chunk text. Prefer precise titles and concise summaries. Keep aliases to exact names, roles, acronyms, or variant phrasings found in the text. Return JSON only."
+    },
+    {
+      role: "user" as const,
+      content: [
+        `Document title: ${params.documentTitle}`,
+        "",
+        "Chunks:",
+        chunkPayload,
+        "",
+        'Return JSON with shape: {"objects":[{"chunkIndex":0,"kind":"...","title":"...","body":"...","summary":"...","tags":["..."],"aliases":["..."]}]}',
+        "",
+        "Rules:",
+        "- Extract up to 4 memory objects per chunk.",
+        "- Good targets include obligations, entities, names, approvals, table facts, definitions, responsibilities, headings, process steps, and notable observations.",
+        "- Skip boilerplate, image markers, navigation text, and empty material.",
+        "- kind must be short snake_case or a short lowercase label.",
+        "- body must stay grounded in the chunk text.",
+        "- Do not invent facts or merge information across chunks.",
+        "- Return JSON only."
+      ].join("\n")
+    }
+  ];
+
+  let json: {
+    choices?: Array<{
+      message?: {
+        content?: string | null;
+      };
+    }>;
+    model?: string;
+  } | null = null;
+  let parsed: z.infer<typeof memoryObjectResponseSchema> | null = null;
+  let lastError: Error | null = null;
+
+  for (const requireJsonMode of [true, false]) {
+    try {
+      json = await requestStructuredChatCompletion({
+        baseUrl: config.generationBaseUrl,
+        apiKey: config.generationApiKey,
+        model: config.llmModel,
+        messages,
+        requireJsonMode
+      });
+
+      const content = sanitizeGeneratedAnswer(json.choices?.[0]?.message?.content || "");
+      parsed = memoryObjectResponseSchema.parse(JSON.parse(extractJsonObject(content)));
+      lastError = null;
+      break;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error("memory_object_generation_failed");
+    }
+  }
+
+  if (!json || !parsed) {
+    throw lastError ?? new Error("memory_object_generation_failed");
+  }
+
+  return {
+    objects: parsed.objects,
+    modelName: json.model || config.llmModel,
+    provider: "vast-openai-compatible" as const
   };
 }

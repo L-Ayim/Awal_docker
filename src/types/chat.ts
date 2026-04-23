@@ -22,6 +22,7 @@ export type ChatMessage = {
   role: ChatRole;
   content: string;
   createdAt: number;
+  status?: "sending" | "streaming" | "error" | "complete";
   answerRecord?: {
     state: string;
     modelName: string | null;

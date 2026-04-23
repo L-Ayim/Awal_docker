@@ -1,5 +1,4 @@
-import { readFile } from "fs/promises";
-import { fileURLToPath } from "url";
+import { readStoredBytes } from "@/lib/storage";
 
 type PdfLine = {
   pageNumber: number;
@@ -79,11 +78,10 @@ function buildQuotedText(lines: PdfLine[]) {
 
 async function loadPdfDocument(storageUri: string) {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-  const absolutePath = fileURLToPath(storageUri);
-  const buffer = await readFile(absolutePath);
+  const stored = await readStoredBytes(storageUri);
 
   return pdfjs.getDocument({
-    data: new Uint8Array(buffer)
+    data: new Uint8Array(stored.bytes)
   }).promise;
 }
 
@@ -119,10 +117,6 @@ function joinLineText(parts: Array<{ x: number; text: string }>) {
 }
 
 async function extractPageLines(storageUri: string): Promise<PdfLine[]> {
-  if (!storageUri.startsWith("file://")) {
-    return [];
-  }
-
   const document = await loadPdfDocument(storageUri);
   const lines: PdfLine[] = [];
 
@@ -202,7 +196,7 @@ async function extractPageLines(storageUri: string): Promise<PdfLine[]> {
 }
 
 export async function buildPdfCitationIndex(storageUri: string | null) {
-  if (!storageUri || !storageUri.startsWith("file://")) {
+  if (!storageUri) {
     return null;
   }
 
