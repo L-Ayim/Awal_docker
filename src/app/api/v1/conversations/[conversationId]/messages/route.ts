@@ -6,7 +6,7 @@ import {
   getAiRuntimeConfig,
   rerankEvidence
 } from "@/lib/ai-provider";
-import { applyRerankScores, composeGroundedAnswer, rankChunks } from "@/lib/retrieval";
+import { applyRerankScores, rankChunks } from "@/lib/retrieval";
 
 const createMessageSchema = z.object({
   content: z.string().trim().min(1).max(4000)
@@ -452,32 +452,19 @@ export async function POST(request: Request, context: RouteContext) {
               }))
             })
           : readyDocuments.length === 0
-          ? "I don't have any ready documents in this collection yet. Upload and process a document first, then ask again."
+            ? "I don't have any ready documents in this collection yet. Upload and process a document first, then ask again."
           : rankedMatches.length === 0
             ? "I couldn't find grounded evidence for that question in the documents I have ready right now."
-            : composeGroundedAnswer({
-                query: parsed.data.content,
-                matches: rankedMatches.map((match) => ({
-                  text: match.text,
-                  chunkIndex: match.chunkIndex,
-                  documentTitle: match.documentTitle,
-                  pageStart: match.pageStart,
-                  pageEnd: match.pageEnd,
-                  paragraphStart: match.paragraphStart,
-                  paragraphEnd: match.paragraphEnd,
-                  lineStart: match.lineStart,
-                  lineEnd: match.lineEnd
-                }))
-              });
+            : "I found relevant material, but the answer service is temporarily unavailable right now. Please try again in a moment.";
 
       const assistantState =
         generated?.provider === "vast-openai-compatible"
           ? generated.answerState
           : readyDocuments.length === 0
-          ? "ingestion_pending"
+            ? "ingestion_pending"
           : rankedMatches.length === 0
             ? "insufficient_evidence"
-            : generated?.answerState ?? "grounded_answer";
+            : "insufficient_evidence";
 
       const assistantMessage = await tx.message.create({
         data: {
