@@ -1,11 +1,12 @@
 "use client";
 
-import { Send, Square } from "lucide-react";
+import { Clock3, Send, Square } from "lucide-react";
 import { useEffect, useRef } from "react";
 
 type ChatInputProps = {
   input: string;
   isSending: boolean;
+  queuedCount: number;
   onInputChange: (value: string) => void;
   onSendMessage: () => void;
   onStopSending: () => void;
@@ -14,11 +15,13 @@ type ChatInputProps = {
 export function ChatInput({
   input,
   isSending,
+  queuedCount,
   onInputChange,
   onSendMessage,
   onStopSending
 }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const hasInput = input.trim().length > 0;
 
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -49,16 +52,39 @@ export function ChatInput({
             }
           }}
         />
-        <button
-          className="composer-send-button"
-          type={isSending ? "button" : "submit"}
-          disabled={!isSending && !input.trim()}
-          onClick={isSending ? onStopSending : undefined}
-          aria-label={isSending ? "Stop response" : "Send message"}
-        >
-          {isSending ? <Square aria-hidden="true" /> : <Send aria-hidden="true" />}
-        </button>
+        <div className="composer-actions">
+          {isSending ? (
+            <button
+              className="composer-stop-button"
+              type="button"
+              onClick={onStopSending}
+              aria-label="Stop response"
+            >
+              <Square aria-hidden="true" />
+            </button>
+          ) : null}
+          <button
+            className="composer-send-button"
+            type="submit"
+            disabled={!hasInput}
+            aria-label={isSending ? "Queue message" : "Send message"}
+          >
+            {isSending ? <Clock3 aria-hidden="true" /> : <Send aria-hidden="true" />}
+          </button>
+        </div>
       </div>
+      {isSending || queuedCount > 0 ? (
+        <div className="composer-status" aria-live="polite">
+          {isSending
+            ? hasInput
+              ? "Send to queue the next message."
+              : "Response is in progress."
+            : null}
+          {queuedCount > 0
+            ? `${isSending ? " " : ""}${queuedCount} queued ${queuedCount === 1 ? "message" : "messages"}.`
+            : null}
+        </div>
+      ) : null}
     </form>
   );
 }

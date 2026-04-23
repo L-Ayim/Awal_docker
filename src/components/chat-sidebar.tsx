@@ -1,7 +1,7 @@
 "use client";
 
-import { useRef } from "react";
-import { FolderUp, Pencil, Plus, Trash2, Upload } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ChevronDown, FolderUp, Pencil, Plus, Trash2, Upload } from "lucide-react";
 import type { ChatSession } from "@/types/chat";
 
 type ChatSidebarProps = {
@@ -41,6 +41,23 @@ export function ChatSidebar({
 }: ChatSidebarProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
+  const uploadMenuRef = useRef<HTMLDivElement | null>(null);
+  const [uploadMenuOpen, setUploadMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (!uploadMenuOpen) {
+      return;
+    }
+
+    function handlePointerDown(event: MouseEvent) {
+      if (!uploadMenuRef.current?.contains(event.target as Node)) {
+        setUploadMenuOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
+  }, [uploadMenuOpen]);
 
   return (
     <>
@@ -55,27 +72,54 @@ export function ChatSidebar({
           </h1>
         </div>
 
-        <button
-          className="sidebar-upload"
-          onClick={() => fileInputRef.current?.click()}
-          type="button"
-          disabled={isUploading}
-          aria-label="Upload documents"
-        >
-          <Upload aria-hidden="true" />
-          <span>{isUploading ? "Uploading..." : "Upload Docs"}</span>
-        </button>
+        <div className="sidebar-upload-menu" ref={uploadMenuRef}>
+          <button
+            className="sidebar-upload"
+            onClick={() => setUploadMenuOpen((current) => !current)}
+            type="button"
+            disabled={isUploading}
+            aria-label="Open upload options"
+            aria-expanded={uploadMenuOpen}
+          >
+            <Upload aria-hidden="true" />
+            <span>{isUploading ? "Uploading..." : "Upload"}</span>
+            <ChevronDown
+              aria-hidden="true"
+              className={uploadMenuOpen ? "sidebar-upload-chevron open" : "sidebar-upload-chevron"}
+            />
+          </button>
 
-        <button
-          className="sidebar-upload"
-          onClick={() => folderInputRef.current?.click()}
-          type="button"
-          disabled={isUploading}
-          aria-label="Upload folder"
-        >
-          <FolderUp aria-hidden="true" />
-          <span>{isUploading ? "Uploading..." : "Upload Folder"}</span>
-        </button>
+          {uploadMenuOpen ? (
+            <div className="sidebar-upload-dropdown" role="menu" aria-label="Upload options">
+              <button
+                className="sidebar-upload-option"
+                onClick={() => {
+                  setUploadMenuOpen(false);
+                  fileInputRef.current?.click();
+                }}
+                type="button"
+                disabled={isUploading}
+                role="menuitem"
+              >
+                <Upload aria-hidden="true" />
+                <span>Documents</span>
+              </button>
+              <button
+                className="sidebar-upload-option"
+                onClick={() => {
+                  setUploadMenuOpen(false);
+                  folderInputRef.current?.click();
+                }}
+                type="button"
+                disabled={isUploading}
+                role="menuitem"
+              >
+                <FolderUp aria-hidden="true" />
+                <span>Folder</span>
+              </button>
+            </div>
+          ) : null}
+        </div>
 
         <input
           ref={fileInputRef}

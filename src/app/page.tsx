@@ -15,6 +15,7 @@ export default function HomePage() {
     isBootstrapping,
     isSending,
     isUploading,
+    queuedMessages,
     error,
     createNewSession,
     deleteSession,
@@ -34,9 +35,10 @@ export default function HomePage() {
   );
 
   const activeTitle = activeSession?.title ?? "New chat";
+  const queuedCount = queuedMessages.filter((message) => message.sessionId === activeSessionId).length;
 
   async function handleSendMessage() {
-    if (!activeSession || !input.trim() || isSending) return;
+    if (!activeSession || !input.trim()) return;
     const content = input.trim();
     setInput("");
     void sendMessage(content);
@@ -84,6 +86,7 @@ export default function HomePage() {
           <ChatInput
             input={input}
             isSending={isSending}
+            queuedCount={queuedCount}
             onInputChange={setInput}
             onSendMessage={handleSendMessage}
             onStopSending={stopSending}

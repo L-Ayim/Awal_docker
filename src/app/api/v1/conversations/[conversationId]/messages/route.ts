@@ -617,7 +617,7 @@ export async function POST(request: Request, context: RouteContext) {
             ? "I don't have any ready documents in this collection yet. Upload and process a document first, then ask again."
           : rankedMatches.length === 0
             ? "I couldn't find grounded evidence for that question in the documents I have ready right now."
-            : "I found relevant material, but the answer service is temporarily unavailable right now. Please try again in a moment.";
+            : "Awal is offline right now.";
 
       const assistantState =
         generated?.provider === "vast-openai-compatible"

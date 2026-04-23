@@ -87,6 +87,12 @@ type UploadableFile = File & {
   webkitRelativePath?: string;
 };
 
+type QueuedMessage = {
+  id: string;
+  sessionId: string;
+  content: string;
+};
+
 function mapMessage(message: {
   id: string;
   role: ChatRole;
@@ -184,6 +190,7 @@ export function useSessions() {
   const [isSending, setIsSending] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([]);
   const activeRequestRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -380,9 +387,23 @@ export function useSessions() {
     );
   };
 
-  const sendMessage = async (content: string) => {
+  const sendMessage = async (content: string, targetSessionId?: string) => {
     const nextContent = content.trim();
-    if (!activeSessionId || !nextContent || isSending) {
+    const sessionId = targetSessionId ?? activeSessionId;
+
+    if (!sessionId || !nextContent) {
+      return;
+    }
+
+    if (isSending) {
+      setQueuedMessages((current) => [
+        ...current,
+        {
+          id: makeTempId("queued"),
+          sessionId,
+          content: nextContent
+        }
+      ]);
       return;
     }
 
@@ -413,7 +434,7 @@ export function useSessions() {
 
       setSessions((current) =>
         current.map((session) =>
-          session.id === activeSessionId
+          session.id === sessionId
             ? {
                 ...session,
                 messages: [...session.messages, optimisticUser, optimisticAssistant],
@@ -428,7 +449,7 @@ export function useSessions() {
         )
       );
 
-      const response = await fetch(`/api/v1/conversations/${activeSessionId}/messages?stream=1`, {
+      const response = await fetch(`/api/v1/conversations/${sessionId}/messages?stream=1`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
@@ -464,7 +485,7 @@ export function useSessions() {
             if (event.type === "status") {
               setSessions((current) =>
                 current.map((session) =>
-                  session.id === activeSessionId
+                  session.id === sessionId
                     ? {
                         ...session,
                         messages: session.messages.map((message) =>
@@ -486,7 +507,7 @@ export function useSessions() {
             if (event.type === "assistant_delta") {
               setSessions((current) =>
                 current.map((session) =>
-                  session.id === activeSessionId
+                  session.id === sessionId
                     ? {
                         ...session,
                         messages: session.messages.map((message) =>
@@ -509,7 +530,7 @@ export function useSessions() {
               const mappedUser = mapMessage(event.data);
               setSessions((current) =>
                 current.map((session) =>
-                  session.id === activeSessionId
+                  session.id === sessionId
                     ? {
                         ...session,
                         messages: session.messages.map((message) =>
@@ -528,7 +549,7 @@ export function useSessions() {
 
               setSessions((current) =>
                 current.map((session) =>
-                  session.id === activeSessionId
+                  session.id === sessionId
                     ? {
                         ...session,
                         messages: session.messages.map((message) => {
@@ -559,7 +580,7 @@ export function useSessions() {
       const aborted = nextError instanceof DOMException && nextError.name === "AbortError";
       setSessions((current) =>
         current.map((session) =>
-          session.id === activeSessionId
+          session.id === sessionId
             ? {
                 ...session,
                 messages: session.messages.map((message) =>
@@ -588,6 +609,16 @@ export function useSessions() {
       setIsSending(false);
     }
   };
+
+  useEffect(() => {
+    if (isSending || queuedMessages.length === 0) {
+      return;
+    }
+
+    const [next, ...rest] = queuedMessages;
+    setQueuedMessages(rest);
+    void sendMessage(next.content, next.sessionId);
+  }, [isSending, queuedMessages]);
 
   const stopSending = () => {
     activeRequestRef.current?.abort();
@@ -633,6 +664,7 @@ export function useSessions() {
     isBootstrapping,
     isSending,
     isUploading,
+    queuedMessages,
     error,
     createNewSession,
     deleteSession,

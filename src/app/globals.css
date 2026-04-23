@@ -138,6 +138,10 @@ h1 {
   gap: 10px;
 }
 
+.sidebar-upload-menu {
+  position: relative;
+}
+
 .sidebar-label {
   color: var(--muted);
   font-size: 0.75rem;
@@ -294,6 +298,60 @@ h1 {
   justify-content: center;
   gap: 10px;
   border: 1px solid rgba(16, 82, 224, 0.18);
+  background: var(--accent-soft);
+}
+
+.sidebar-upload {
+  width: 100%;
+}
+
+.sidebar-upload-chevron {
+  margin-left: auto;
+  transition: transform 140ms ease;
+}
+
+.sidebar-upload-chevron.open {
+  transform: rotate(180deg);
+}
+
+.sidebar-upload-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgba(16, 82, 224, 0.12);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: var(--shadow);
+  z-index: 20;
+}
+
+.sidebar-upload-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border: 1px solid rgba(16, 82, 224, 0.12);
+  border-radius: 12px;
+  background: var(--panel-soft);
+  color: var(--accent);
+  padding: 10px 12px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    transform 140ms ease,
+    border-color 140ms ease,
+    background 140ms ease,
+    opacity 140ms ease;
+}
+
+.sidebar-upload-option:hover {
+  transform: translateY(-1px);
+  border-color: rgba(16, 82, 224, 0.22);
   background: var(--accent-soft);
 }
 
@@ -852,6 +910,13 @@ h1 {
   gap: 12px;
 }
 
+.composer-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+
 .chat-composer textarea {
   flex: 1 1 auto;
   width: 100%;
@@ -912,16 +977,52 @@ h1 {
     opacity 140ms ease;
 }
 
+.composer-stop-button {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid rgba(16, 82, 224, 0.18);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.86);
+  color: var(--accent);
+  box-shadow: none;
+  cursor: pointer;
+  transition:
+    transform 140ms ease,
+    border-color 140ms ease,
+    background 140ms ease,
+    opacity 140ms ease;
+}
+
 .composer-send-button:not(:disabled):hover {
   transform: translateY(-1px);
   filter: brightness(1.04);
 }
 
+.composer-stop-button:not(:disabled):hover {
+  transform: translateY(-1px);
+  border-color: rgba(16, 82, 224, 0.28);
+  background: rgba(240, 244, 255, 0.98);
+}
+
 .composer-send-button:disabled,
+.composer-stop-button:disabled,
 .sidebar-new-chat:disabled,
 .sidebar-upload:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.composer-status {
+  margin-top: 10px;
+  padding: 0 2px;
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 600;
 }
 
 .mobile-sidebar-toggle {
