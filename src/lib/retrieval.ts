@@ -220,10 +220,14 @@ export function rankChunks(params: {
   query: string;
   chunks: ChunkCandidate[];
   queryEmbedding?: number[] | null;
+  preferredCardKinds?: string[];
   limit?: number;
 }) {
   const normalizedQuery = normalize(params.query);
   const queryTokens = tokenize(params.query);
+  const preferredCardKinds = new Set(
+    (params.preferredCardKinds ?? []).map((kind) => kind.toLowerCase())
+  );
 
   if (queryTokens.length === 0) {
     return [];
@@ -259,13 +263,20 @@ export function rankChunks(params: {
       );
       const metadataScore = computeTokenOverlapScore(queryTokens, metadataText);
       const indexCardBoost = chunk.evidenceSource === "index_card" ? 0.08 + metadataScore * 0.32 : 0;
+      const preferredKindBoost =
+        chunk.evidenceSource === "index_card" &&
+        chunk.cardKind &&
+        preferredCardKinds.has(chunk.cardKind.toLowerCase())
+          ? 0.22
+          : 0;
       const hybridScore =
         normalizedLexical * (denseScore !== null ? 0.35 : 0.55) +
         titleScore * 0.22 +
         metadataScore * 0.16 +
         phraseScore * 0.25 +
         Math.max(denseScore ?? 0, 0) * (denseScore !== null ? 0.1 : 0) +
-        indexCardBoost;
+        indexCardBoost +
+        preferredKindBoost;
 
       return {
         ...chunk,

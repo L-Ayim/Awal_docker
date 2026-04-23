@@ -184,6 +184,32 @@ function buildHeuristicChunkCards(chunk: ChunkInput) {
     );
   }
 
+  if (/\b(prohibited|not permitted|not allowed|unauthorized|must not|shall not|forbidden)\b/i.test(normalized)) {
+    cards.push(
+      makeCard(chunk, {
+        kind: "prohibition",
+        title: firstSentence.slice(0, 90),
+        body: normalized,
+        summary: firstSentence,
+        tags: ["prohibition", "policy", "control"],
+        aliases: names
+      })
+    );
+  }
+
+  if (/\b(exception|except|unless|approved by|approval from|prior approval)\b/i.test(normalized)) {
+    cards.push(
+      makeCard(chunk, {
+        kind: "exception",
+        title: firstSentence.slice(0, 90),
+        body: normalized,
+        summary: firstSentence,
+        tags: ["exception", "approval", "policy"],
+        aliases: names
+      })
+    );
+  }
+
   const definitionMatch = normalized.match(/^(.{3,90}?)\s+(means|refers to|is defined as)\s+(.{20,})$/i);
 
   if (definitionMatch) {

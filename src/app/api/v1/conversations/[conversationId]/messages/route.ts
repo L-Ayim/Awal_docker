@@ -7,6 +7,7 @@ import {
   getAiRuntimeConfig,
   rerankEvidence
 } from "@/lib/ai-provider";
+import { buildQueryProfile } from "@/lib/query-understanding";
 import { applyRerankScores, rankChunks } from "@/lib/retrieval";
 
 const createMessageSchema = z.object({
@@ -470,6 +471,7 @@ export async function POST(request: Request, context: RouteContext) {
             : [];
           const chunk = card.chunk!;
           const evidenceText = [
+            `Kind: ${card.kind}`,
             card.title,
             card.summary,
             card.body,
@@ -510,8 +512,9 @@ export async function POST(request: Request, context: RouteContext) {
       currentQuestion: parsed.data.content,
       previousMessages: [...conversation.messages].reverse()
     });
+    const queryProfile = buildQueryProfile(parsed.data.content);
     const retrievalQuery = buildRetrievalQuery({
-      currentQuestion: parsed.data.content,
+      currentQuestion: queryProfile.retrievalQuery,
       previousMessages: [...conversation.messages].reverse()
     });
     const aiConfig = getAiRuntimeConfig();
@@ -530,6 +533,7 @@ export async function POST(request: Request, context: RouteContext) {
       query: retrievalQuery,
       chunks: evidenceCandidates,
       queryEmbedding,
+      preferredCardKinds: queryProfile.preferredCardKinds,
       limit: 10
     });
 
@@ -571,6 +575,7 @@ export async function POST(request: Request, context: RouteContext) {
       try {
         generated = await generateGroundedAnswer({
           query: contextualQuery,
+          queryProfile,
           matches: rankedMatches.map((match) => ({
             text: match.text,
             chunkIndex: match.chunkIndex,

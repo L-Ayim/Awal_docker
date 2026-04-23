@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { QueryProfile } from "@/lib/query-understanding";
 
 type EvidenceMatch = {
   text: string;
@@ -124,11 +125,22 @@ export function getAiRuntimeConfig() {
   };
 }
 
-function buildEvidencePayload(query: string, matches: EvidenceMatch[]) {
+function buildProfileLines(queryProfile?: Pick<QueryProfile, "intent" | "answerGuidance">) {
+  return queryProfile
+    ? [`Question intent: ${queryProfile.intent}`, `Answer guidance: ${queryProfile.answerGuidance}`]
+    : [];
+}
+
+function buildEvidencePayload(
+  query: string,
+  matches: EvidenceMatch[],
+  queryProfile?: Pick<QueryProfile, "intent" | "answerGuidance">
+) {
   if (matches.length === 0) {
     return [
       "Question:",
       query,
+      ...buildProfileLines(queryProfile),
       "",
       "Evidence candidates:",
       "(none)",
@@ -136,11 +148,12 @@ function buildEvidencePayload(query: string, matches: EvidenceMatch[]) {
       "Return JSON with this exact shape:",
       '{"responseKind":"conversational|grounded|insufficient_evidence","lead":{"text":"...","evidenceIds":[]},"bullets":[{"text":"...","evidenceIds":[1]}]}',
       "",
-    "Rules:",
-    "- Decide the user's intent yourself.",
-    "- If the user is making casual conversation such as a greeting, a thank-you, or a simple check-in, use responseKind conversational.",
+      "Rules:",
+      "- Use the supplied question intent and answer guidance when present.",
+      "- Decide the user's intent yourself if no question intent is supplied.",
+      "- If the user is making casual conversation such as a greeting, a thank-you, or a simple check-in, use responseKind conversational.",
       "- If the user asks about anything that is not represented in the user's documents, use responseKind insufficient_evidence and politely say you can only answer from the processed documents.",
-    "- Do not invent document facts.",
+      "- Do not invent document facts.",
       "- Do not answer from general knowledge, even for common public topics.",
       "- Do not include citations in the text. Put only evidence ids in evidenceIds arrays.",
       "- If responseKind is conversational or insufficient_evidence, evidenceIds must be empty arrays.",
@@ -182,6 +195,7 @@ function buildEvidencePayload(query: string, matches: EvidenceMatch[]) {
   return [
     "Question:",
     query,
+    ...buildProfileLines(queryProfile),
     "",
     "Evidence candidates:",
     evidence,
@@ -193,6 +207,9 @@ function buildEvidencePayload(query: string, matches: EvidenceMatch[]) {
     "- Read the question and decide whether the evidence is actually needed to answer it.",
     "- If the user is making casual conversation, use responseKind conversational and answer naturally in one short sentence.",
     "- If the user is asking for document-backed information, think through which evidence candidates are truly relevant before answering.",
+    "- For policy advice questions, start with a direct decision posture such as 'Based on the documents, this appears prohibited' or 'The documents do not make that clear.'",
+    "- For policy advice questions, include what the user should do next only when the evidence supports it.",
+    "- For list or count questions, do not imply the list is complete unless the evidence supports completeness.",
     "- Use responseKind grounded only when the supplied evidence is enough to support the answer.",
     "- Use responseKind insufficient_evidence when the evidence is missing, weak, not directly on point, or the user asks about a general outside topic.",
     "- Do not answer outside-knowledge questions from memory. For those, politely say you can only answer from the processed documents.",
@@ -400,6 +417,7 @@ export async function rerankEvidence(params: {
 export async function generateGroundedAnswer(params: {
   query: string;
   matches: EvidenceMatch[];
+  queryProfile?: Pick<QueryProfile, "intent" | "answerGuidance">;
 }): Promise<GenerationResult> {
   const config = getAiRuntimeConfig();
 
@@ -421,11 +439,11 @@ export async function generateGroundedAnswer(params: {
     {
       role: "system" as const,
       content:
-        "You are Awal, a friendly assistant that answers from the user's processed documents. You may respond naturally to greetings and simple social check-ins, but factual answers must be grounded only in the supplied document evidence. If the user asks about a topic outside the documents, do not use general knowledge; respond with insufficient_evidence and politely say you can only answer from the processed documents. When evidence candidates are supplied, think through which ones are actually relevant before answering. The runtime, not you, will render final citations, so never write citations in the answer text. Return JSON only, matching the requested schema exactly. Do not reveal chain-of-thought. Do not output <think> tags or hidden reasoning."
+        "You are Awal, a document-grounded assistant for practical policy and procedure questions. You may respond naturally to greetings and simple social check-ins, but factual answers and advice must be grounded only in the supplied document evidence. When the user asks for advice, interpret the documents into a practical decision posture while staying conservative: say allowed, prohibited, required, recommended, or unclear only when the evidence supports that posture. If the user asks about a topic outside the documents, do not use general knowledge; respond with insufficient_evidence and politely say you can only answer from the processed documents. The runtime, not you, will render final citations, so never write citations in the answer text. Return JSON only, matching the requested schema exactly. Do not reveal chain-of-thought. Do not output <think> tags or hidden reasoning."
     },
     {
       role: "user" as const,
-      content: buildEvidencePayload(params.query, params.matches)
+      content: buildEvidencePayload(params.query, params.matches, params.queryProfile)
     }
   ];
 
@@ -555,7 +573,7 @@ export async function generateDocumentMemoryObjects(params: {
     {
       role: "system" as const,
       content:
-        "You are building a semantic memory layer for document retrieval. Extract durable memory objects from the supplied document chunks. Do not use a fixed taxonomy; choose short, reusable kind labels that fit the source content such as summary, entity, role, obligation, fact, definition, relationship, table_row, heading, observation, approval, or procedure_step. Only emit objects that are directly supported by the chunk text. Prefer precise titles and concise summaries. Keep aliases to exact names, roles, acronyms, or variant phrasings found in the text. Return JSON only."
+        "You are building a semantic memory layer for document retrieval. Extract durable memory objects from the supplied document chunks. Do not use a fixed taxonomy; choose short, reusable kind labels that fit the source content such as summary, entity, role, obligation, prohibition, exception, fact, definition, relationship, table_row, heading, observation, approval, control, or procedure_step. Only emit objects that are directly supported by the chunk text. Prefer precise titles and concise summaries. Keep aliases to exact names, roles, acronyms, or variant phrasings found in the text. Return JSON only."
     },
     {
       role: "user" as const,
@@ -569,7 +587,7 @@ export async function generateDocumentMemoryObjects(params: {
         "",
         "Rules:",
         "- Extract up to 4 memory objects per chunk.",
-        "- Good targets include obligations, entities, names, approvals, table facts, definitions, responsibilities, headings, process steps, and notable observations.",
+        "- Good targets include obligations, prohibitions, exceptions, controls, entities, names, approvals, table facts, definitions, responsibilities, headings, process steps, and notable observations.",
         "- Skip boilerplate, image markers, navigation text, and empty material.",
         "- kind must be short snake_case or a short lowercase label.",
         "- body must stay grounded in the chunk text.",
