@@ -48,9 +48,9 @@ Expected local service ports:
 - vLLM/Qwen: `http://127.0.0.1:8000/v1`
 - Docling: `http://127.0.0.1:8010`
 - embeddings: `http://127.0.0.1:8020`
-- rerank: `http://127.0.0.1:8030`
+- rerank: `http://127.0.0.1:8030` if `ENABLE_RERANK=1`
 
-If Vast tunnels are used, create tunnels for ports `8000`, `8010`, `8020`, and optionally `8030`.
+If Vast tunnels are used, create tunnels for ports `8000`, `8010`, `8020`, and only create `8030` when rerank is enabled.
 
 To compare smaller generators, use `deploy/vast/vllm/run-qwen3.sh` with `2b`, `4b`, `8b`, or `14b`, then update `VAST_LLM_MODEL` on Fly to match. See [Model Size Evaluation](model-size-eval.md).
 

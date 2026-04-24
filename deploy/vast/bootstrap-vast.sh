@@ -13,6 +13,7 @@ RERANK_API_KEY="${RERANK_API_KEY:-awal-rerank-key}"
 EMBEDDING_MODEL="${EMBEDDING_MODEL:-BAAI/bge-m3}"
 RERANK_MODEL="${RERANK_MODEL:-BAAI/bge-reranker-v2-m3}"
 DOCLING_DEVICE="${DOCLING_DEVICE:-cuda}"
+ENABLE_RERANK="${ENABLE_RERANK:-0}"
 
 log() {
   printf '\n==> %s\n' "$*"
@@ -80,9 +81,14 @@ start_services() {
     env EMBEDDING_API_KEY="$EMBEDDING_API_KEY" EMBEDDING_MODEL="$EMBEDDING_MODEL" \
     python -m uvicorn scripts.embedding_service:app --host 0.0.0.0 --port 8020 --app-dir "$WORKDIR"
 
-  start_service "rerank" "scripts.rerank_service" \
-    env RERANK_API_KEY="$RERANK_API_KEY" RERANK_MODEL="$RERANK_MODEL" \
-    python -m uvicorn scripts.rerank_service:app --host 0.0.0.0 --port 8030 --app-dir "$WORKDIR"
+  if [ "$ENABLE_RERANK" = "1" ]; then
+    start_service "rerank" "scripts.rerank_service" \
+      env RERANK_API_KEY="$RERANK_API_KEY" RERANK_MODEL="$RERANK_MODEL" \
+      python -m uvicorn scripts.rerank_service:app --host 0.0.0.0 --port 8030 --app-dir "$WORKDIR"
+  else
+    log "Skipping rerank because ENABLE_RERANK is not 1"
+    pkill -f "scripts.rerank_service" >/dev/null 2>&1 || true
+  fi
 
   start_service "vllm" "vllm serve" \
     env API_KEY="$VLLM_API_KEY" \
@@ -121,8 +127,10 @@ print_status() {
   echo
   curl -s http://127.0.0.1:8020/health || true
   echo
-  curl -s http://127.0.0.1:8030/health || true
-  echo
+  if [ "$ENABLE_RERANK" = "1" ]; then
+    curl -s http://127.0.0.1:8030/health || true
+    echo
+  fi
   curl -s http://127.0.0.1:8000/v1/models -H "Authorization: Bearer $VLLM_API_KEY" || true
   echo
 
@@ -132,13 +140,13 @@ Ports to tunnel in Vast:
   http://localhost:8000  vLLM/Qwen
   http://localhost:8010  Docling
   http://localhost:8020  embeddings
-  http://localhost:8030  rerank
+  http://localhost:8030  rerank, optional only if ENABLE_RERANK=1
 
 Logs:
   tail -f $LOG_DIR/vllm.log
   tail -f $LOG_DIR/docling.log
   tail -f $LOG_DIR/embedding.log
-  tail -f $LOG_DIR/rerank.log
+  tail -f $LOG_DIR/rerank.log  # only if ENABLE_RERANK=1
 EOF
 }
 
@@ -149,6 +157,8 @@ start_services
 
 wait_for_http "Docling" "http://127.0.0.1:8010/health" "" 60 || true
 wait_for_http "Embeddings" "http://127.0.0.1:8020/health" "" 90 || true
-wait_for_http "Rerank" "http://127.0.0.1:8030/health" "" 90 || true
+if [ "$ENABLE_RERANK" = "1" ]; then
+  wait_for_http "Rerank" "http://127.0.0.1:8030/health" "" 90 || true
+fi
 wait_for_http "vLLM" "http://127.0.0.1:8000/v1/models" "Authorization: Bearer $VLLM_API_KEY" 180 || true
 print_status

@@ -49,7 +49,13 @@ curl -fsSL https://raw.githubusercontent.com/L-Ayim/Awal_docker/main/deploy/vast
 curl -fsSL https://raw.githubusercontent.com/L-Ayim/Awal_docker/main/deploy/vast/bootstrap-qwen3-14b.sh | bash
 ```
 
-The script clones or updates `/workspace/Awal`, installs Python dependencies, starts vLLM, Docling, embeddings, and rerank, then prints the local health checks and ports to tunnel.
+The script clones or updates `/workspace/Awal`, installs Python dependencies, starts vLLM, Docling, and embeddings, then prints the local health checks and ports to tunnel.
+
+Rerank is optional and is skipped by default to save VRAM on smaller servers. Enable it only when needed:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/L-Ayim/Awal_docker/main/deploy/vast/bootstrap-qwen3-2b.sh | ENABLE_RERANK=1 bash
+```
 
 The generic version still works if you prefer an explicit profile argument:
 
