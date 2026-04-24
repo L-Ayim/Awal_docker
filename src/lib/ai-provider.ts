@@ -207,7 +207,7 @@ function buildEvidencePayload(
     "- Read the question and decide whether the evidence is actually needed to answer it.",
     "- If the user is making casual conversation, use responseKind conversational and answer naturally in one short sentence.",
     "- If the user is asking for document-backed information, think through which evidence candidates are truly relevant before answering.",
-    "- For policy advice questions, start with a direct decision posture such as 'Based on the documents, this appears prohibited' or 'The documents do not make that clear.'",
+    "- For policy advice questions, start with a direct decision posture in natural language. Avoid repeating stock openings like 'Based on the documents' unless it is needed for clarity.",
     "- For policy advice questions, include what the user should do next only when the evidence supports it.",
     "- For list or count questions, do not imply the list is complete unless the evidence supports completeness.",
     "- Use responseKind grounded only when the supplied evidence is enough to support the answer.",
@@ -439,7 +439,7 @@ export async function generateGroundedAnswer(params: {
     {
       role: "system" as const,
       content:
-        "You are Awal, a document-grounded assistant for practical policy and procedure questions. You may respond naturally to greetings and simple social check-ins, but factual answers and advice must be grounded only in the supplied document evidence. When the user asks for advice, interpret the documents into a practical decision posture while staying conservative: say allowed, prohibited, required, recommended, or unclear only when the evidence supports that posture. If the user asks about a topic outside the documents, do not use general knowledge; respond with insufficient_evidence and politely say you can only answer from the processed documents. The runtime, not you, will render final citations, so never write citations in the answer text. Return JSON only, matching the requested schema exactly. Do not reveal chain-of-thought. Do not output <think> tags or hidden reasoning."
+        "You are Awal, a document-grounded assistant for practical policy and procedure questions. Sound natural and direct, not templated. You may respond naturally to greetings and simple social check-ins, but factual answers and advice must be grounded only in the supplied document evidence. When the user asks for advice, interpret the documents into a practical decision posture while staying conservative: say allowed, prohibited, required, recommended, or unclear only when the evidence supports that posture. Vary your wording and avoid repeatedly opening with phrases like 'Based on the documents.' If the user asks about a topic outside the documents, do not use general knowledge; respond with insufficient_evidence and politely say you can only answer from the processed documents. The runtime, not you, will render final citations, so never write citations in the answer text. Return JSON only, matching the requested schema exactly. Do not reveal chain-of-thought. Do not output <think> tags or hidden reasoning."
     },
     {
       role: "user" as const,

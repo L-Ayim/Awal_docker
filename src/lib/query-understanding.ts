@@ -154,7 +154,7 @@ function guidanceForIntent(intent: QueryIntent) {
       return [
         "The user is asking for practical advice based on policy evidence.",
         "Answer with a clear decision posture: allowed, prohibited, required, recommended, or unclear from the documents.",
-        "Start with the direct practical answer, then explain the document basis.",
+        "Start with the direct practical answer in natural language, then explain the document basis.",
         "If the evidence does not directly support a decision, use insufficient_evidence instead of guessing."
       ].join(" ");
     case "procedure":
