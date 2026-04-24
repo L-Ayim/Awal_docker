@@ -624,6 +624,23 @@ export function useSessions() {
     activeRequestRef.current?.abort();
   };
 
+  const updateQueuedMessage = (id: string, content: string) => {
+    setQueuedMessages((current) =>
+      current.map((message) =>
+        message.id === id
+          ? {
+              ...message,
+              content
+            }
+          : message
+      )
+    );
+  };
+
+  const deleteQueuedMessage = (id: string) => {
+    setQueuedMessages((current) => current.filter((message) => message.id !== id));
+  };
+
   const uploadDocuments = async (files: FileList | File[]) => {
     if (!bootstrap || !files.length) {
       return;
@@ -671,6 +688,8 @@ export function useSessions() {
     updateSessionTitle,
     sendMessage,
     stopSending,
+    updateQueuedMessage,
+    deleteQueuedMessage,
     setSessionMessages,
     uploadDocuments
   };

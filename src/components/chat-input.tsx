@@ -1,27 +1,37 @@
 "use client";
 
-import { Clock3, Send, Square } from "lucide-react";
+import { Clock3, Send, Square, Trash2 } from "lucide-react";
 import { useEffect, useRef } from "react";
+
+type QueuedComposerMessage = {
+  id: string;
+  content: string;
+};
 
 type ChatInputProps = {
   input: string;
   isSending: boolean;
-  queuedCount: number;
+  queuedMessages: QueuedComposerMessage[];
   onInputChange: (value: string) => void;
   onSendMessage: () => void;
   onStopSending: () => void;
+  onQueuedMessageChange: (id: string, content: string) => void;
+  onDeleteQueuedMessage: (id: string) => void;
 };
 
 export function ChatInput({
   input,
   isSending,
-  queuedCount,
+  queuedMessages,
   onInputChange,
   onSendMessage,
-  onStopSending
+  onStopSending,
+  onQueuedMessageChange,
+  onDeleteQueuedMessage
 }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const hasInput = input.trim().length > 0;
+  const queuedCount = queuedMessages.length;
 
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -38,6 +48,34 @@ export function ChatInput({
         onSendMessage();
       }}
       >
+      {queuedMessages.length > 0 ? (
+        <div className="composer-queue" aria-live="polite">
+          <div className="composer-queue-header">
+            <span>Queued next</span>
+            <span>{queuedCount}</span>
+          </div>
+          {queuedMessages.map((message, index) => (
+            <div className="composer-queue-item" key={message.id}>
+              <span className="composer-queue-number">{index + 1}</span>
+              <textarea
+                value={message.content}
+                onChange={(event) => onQueuedMessageChange(message.id, event.target.value)}
+                aria-label={`Edit queued message ${index + 1}`}
+                rows={1}
+              />
+              <button
+                type="button"
+                className="composer-queue-delete"
+                onClick={() => onDeleteQueuedMessage(message.id)}
+                aria-label={`Delete queued message ${index + 1}`}
+                title="Delete queued message"
+              >
+                <Trash2 aria-hidden="true" />
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
       <div className="composer-field">
         <textarea
           ref={textareaRef}

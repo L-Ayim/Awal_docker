@@ -22,6 +22,8 @@ export default function HomePage() {
     updateSessionTitle,
     sendMessage,
     stopSending,
+    updateQueuedMessage,
+    deleteQueuedMessage,
     uploadDocuments
   } = useSessions();
   const [input, setInput] = useState("");
@@ -35,7 +37,7 @@ export default function HomePage() {
   );
 
   const activeTitle = activeSession?.title ?? "New chat";
-  const queuedCount = queuedMessages.filter((message) => message.sessionId === activeSessionId).length;
+  const activeQueuedMessages = queuedMessages.filter((message) => message.sessionId === activeSessionId);
 
   async function handleSendMessage() {
     if (!activeSession || !input.trim()) return;
@@ -86,10 +88,12 @@ export default function HomePage() {
           <ChatInput
             input={input}
             isSending={isSending}
-            queuedCount={queuedCount}
+            queuedMessages={activeQueuedMessages}
             onInputChange={setInput}
             onSendMessage={handleSendMessage}
             onStopSending={stopSending}
+            onQueuedMessageChange={updateQueuedMessage}
+            onDeleteQueuedMessage={deleteQueuedMessage}
           />
         </section>
       </section>
