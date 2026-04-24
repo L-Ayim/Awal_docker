@@ -21,6 +21,24 @@ This gives you one runtime definition for:
 
 The services should then be exposed directly on the server's public IP and stable ports.
 
+## One-Command Fresh Vast Setup
+
+On a brand-new Vast PyTorch instance, use this command for the 2B test profile:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/L-Ayim/Awal_docker/main/deploy/vast/bootstrap-vast.sh | bash -s -- 2b
+```
+
+Other model profiles:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/L-Ayim/Awal_docker/main/deploy/vast/bootstrap-vast.sh | bash -s -- 4b
+curl -fsSL https://raw.githubusercontent.com/L-Ayim/Awal_docker/main/deploy/vast/bootstrap-vast.sh | bash -s -- 8b
+curl -fsSL https://raw.githubusercontent.com/L-Ayim/Awal_docker/main/deploy/vast/bootstrap-vast.sh | bash -s -- 14b
+```
+
+The script clones or updates `/workspace/Awal`, installs Python dependencies, starts vLLM, Docling, embeddings, and rerank, then prints the local health checks and ports to tunnel.
+
 ## Services
 
 - `docling`
