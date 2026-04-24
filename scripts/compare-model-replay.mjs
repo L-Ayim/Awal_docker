@@ -45,6 +45,7 @@ for (const arg of process.argv.slice(2)) {
 
 const baselineModel = args.get("baseline") ?? "Qwen/Qwen3-14B";
 const targetModel = args.get("target") ?? "Qwen/Qwen3-1.7B";
+const targetLabel = args.get("target-label") ?? targetModel;
 const appUrl = (args.get("app-url") ?? "https://awal-app.fly.dev").replace(/\/$/, "");
 const limit = Number(args.get("limit") ?? "12");
 const outputPath = path.resolve(args.get("out") ?? "reports/model-replay-2b.md");
@@ -250,7 +251,7 @@ async function main() {
       "",
       `References: ${[...new Set(result.baselineCitations)].join("; ") || "none"}`,
       "",
-      "### 2B Target",
+      `### Target (${targetLabel})`,
       "",
       truncate(result.targetAnswer),
       "",
