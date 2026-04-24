@@ -207,10 +207,10 @@ function buildEvidencePayload(
     "- Read the question and decide whether the evidence is actually needed to answer it.",
     "- If the user is making casual conversation, use responseKind conversational and answer naturally in one short sentence.",
     "- If the user is asking for document-backed information, think through which evidence candidates are truly relevant before answering.",
-    "- For policy advice questions, start with a direct decision posture in natural language. Avoid repeating stock openings like 'Based on the documents' unless it is needed for clarity.",
-    "- For policy advice questions, include what the user should do next only when the evidence supports it.",
+    "- For advice or decision questions, start with a direct practical posture in natural language. Avoid repeating stock openings like 'Based on the documents' unless it is needed for clarity.",
+    "- For advice or decision questions, include what the user should do next only when the evidence supports it.",
     "- If the user gives a concrete example such as an app, channel, tool, person, or scenario, do not say the documents explicitly mention that example unless the exact example appears inside the Evidence candidates themselves. The example appearing in the Question does not count as evidence. If the evidence only gives a broader rule, say the user's example falls under that broader rule rather than claiming the document named the example.",
-    "- Example discipline: if the question mentions WhatsApp but the evidence only says sensitive data disclosure, copying, sending, uploads, or transfers are controlled, do not write 'the policy explicitly mentions WhatsApp.' Write that sharing bank files through WhatsApp would fall under the broader restriction on unauthorized disclosure or transfer.",
+    "- Example discipline: if the question mentions a specific tool, person, place, product, channel, or scenario but the evidence only states a broader rule or category, do not claim the document names the specific example. Explain that the example appears to fall under the broader documented rule only when that connection is clear.",
     "- Every factual claim must be backed by evidenceIds whose evidence directly supports that claim. Do not attach weak or tangential evidence just to create citations.",
     "- For comparison questions, use evidence for each side being compared. If the evidence only supports one side, answer only that supported part and state that the other side is not sufficiently represented in the retrieved evidence.",
     "- For list or count questions, do not imply the list is complete unless the evidence supports completeness.",
@@ -283,7 +283,7 @@ function buildAnswerVerificationPayload(params: {
     "- Verify every factual claim in the draft against the evidence candidates.",
     "- Keep only claims directly supported by their evidenceIds. Rewrite or remove claims that are unsupported, over-specific, or only generally implied.",
     "- If the question contains a concrete example, the example itself is not evidence. Only say a document explicitly mentions that example if the example appears in the evidence text.",
-    "- If a concrete example is covered by a broader documented rule, keep a grounded answer but phrase it as falling under that broader rule. Do not return insufficient_evidence just because the exact example is absent when the broader policy rule clearly applies.",
+    "- If a concrete example is covered by a broader documented rule, keep a grounded answer but phrase it as falling under that broader rule. Do not return insufficient_evidence just because the exact example is absent when the broader source rule clearly applies.",
     "- Remove weak or tangential evidenceIds. Do not cite evidence that does not directly support the sentence.",
     "- For comparisons, include evidenceIds for each side being compared; otherwise narrow the answer or use insufficient_evidence.",
     "- Use insufficient_evidence if the remaining supported claims do not answer the question.",
@@ -541,10 +541,7 @@ async function verifyGroundedAnswer(params: {
       const content = sanitizeGeneratedAnswer(json.choices?.[0]?.message?.content || "");
       const verified = parseStructuredAnswer(content, params.matches.length);
 
-      if (
-        verified.responseKind === "insufficient_evidence" &&
-        params.queryProfile?.intent === "policy_advice"
-      ) {
+      if (verified.responseKind === "insufficient_evidence" && params.draft.responseKind === "grounded") {
         return params.draft;
       }
 
@@ -583,7 +580,7 @@ export async function generateGroundedAnswer(params: {
     {
       role: "system" as const,
       content:
-        "You are Awal, a document-grounded assistant for practical policy and procedure questions. Sound natural and direct, not templated. You may respond naturally to greetings and simple social check-ins, but factual answers and advice must be grounded only in the supplied document evidence. When the user asks for advice, interpret the documents into a practical decision posture while staying conservative: say allowed, prohibited, required, recommended, or unclear only when the evidence supports that posture. Vary your wording and avoid repeatedly opening with phrases like 'Based on the documents.' If the user asks about a topic outside the documents, do not use general knowledge; respond with insufficient_evidence and politely say you can only answer from the processed documents. The runtime, not you, will render final citations, so never write citations in the answer text. Return JSON only, matching the requested schema exactly. Do not reveal chain-of-thought. Do not output <think> tags or hidden reasoning."
+        "You are Awal, a document-grounded assistant for practical questions about user-provided source material. Sound natural and direct, not templated. You may respond naturally to greetings and simple social check-ins, but factual answers and advice must be grounded only in the supplied document evidence. When the user asks for advice, interpret the documents into a practical decision posture while staying conservative: say allowed, prohibited, required, recommended, or unclear only when the evidence supports that posture. Vary your wording and avoid repeatedly opening with phrases like 'Based on the documents.' If the user asks about a topic outside the documents, do not use general knowledge; respond with insufficient_evidence and politely say you can only answer from the processed documents. The runtime, not you, will render final citations, so never write citations in the answer text. Return JSON only, matching the requested schema exactly. Do not reveal chain-of-thought. Do not output <think> tags or hidden reasoning."
     },
     {
       role: "user" as const,
