@@ -2,33 +2,36 @@
 
 This folder contains the architecture and implementation planning set for Awal.
 
-## Reading order
+## Reading Order
 
-1. [Architecture](C:\Users\Lawrence.Ayim\source\side_repos\Johnson\Awal\docs\architecture.md)
-2. [Deployment Topology](C:\Users\Lawrence.Ayim\source\side_repos\Johnson\Awal\docs\deployment-topology.md)
-3. [Data Model](C:\Users\Lawrence.Ayim\source\side_repos\Johnson\Awal\docs\data-model.md)
-4. [Runtime Flows](C:\Users\Lawrence.Ayim\source\side_repos\Johnson\Awal\docs\runtime-flows.md)
-5. [API and MCP Contracts](C:\Users\Lawrence.Ayim\source\side_repos\Johnson\Awal\docs\api-and-contracts.md)
-6. [Docling Ingestion Plan](C:\Users\Lawrence.Ayim\source\side_repos\Johnson\Awal\docs\docling-ingestion.md)
-7. [Evaluation Strategy](C:\Users\Lawrence.Ayim\source\side_repos\Johnson\Awal\docs\evaluation-strategy.md)
-8. [Model Abstraction](C:\Users\Lawrence.Ayim\source\side_repos\Johnson\Awal\docs\model-abstraction.md)
-9. [Model and Serving Plan](C:\Users\Lawrence.Ayim\source\side_repos\Johnson\Awal\docs\model-and-serving.md)
-10. [Frontend](C:\Users\Lawrence.Ayim\source\side_repos\Johnson\Awal\docs\frontend.md)
-11. [Operations And Rebuild](C:\Users\Lawrence.Ayim\source\side_repos\Johnson\Awal\docs\operations-and-rebuild.md)
-12. [Diagrams](C:\Users\Lawrence.Ayim\source\side_repos\Johnson\Awal\docs\diagrams\README.md)
+1. [Fresh Server And Database Setup](fresh-server-setup.md)
+2. [Architecture](architecture.md)
+3. [Deployment Topology](deployment-topology.md)
+4. [Data Model](data-model.md)
+5. [Runtime Flows](runtime-flows.md)
+6. [API and MCP Contracts](api-and-contracts.md)
+7. [Docling Ingestion Plan](docling-ingestion.md)
+8. [Evaluation Strategy](evaluation-strategy.md)
+9. [Model Abstraction](model-abstraction.md)
+10. [Model and Serving Plan](model-and-serving.md)
+11. [Frontend](frontend.md)
+12. [Operations And Rebuild](operations-and-rebuild.md)
+13. [Diagrams](diagrams/README.md)
 
-## Document set
+## Document Set
 
+- `fresh-server-setup.md`
+  - new server, new database, Vast runtime, Fly secrets, deployment, and ingestion checklist
 - `architecture.md`
   - overall system goals, boundaries, responsibilities, and product shape
 - `deployment-topology.md`
-  - how Fly.io, Neon, and Vast.ai fit together
+  - how Fly.io, Neon, object storage, and Vast.ai fit together
 - `data-model.md`
   - entity model, tables, and lifecycle notes
 - `runtime-flows.md`
-  - ingestion, retrieval, answer generation, refusal, and operational flows
+  - ingestion, retrieval, answer generation, verification, refusal, and operational flows
 - `api-and-contracts.md`
-  - endpoint names, MCP tool names, request contracts, and job/event naming
+  - endpoint names, request contracts, and job/event naming
 - `docling-ingestion.md`
   - document parsing strategy, Docling fit, supported formats, and fallback rules
 - `evaluation-strategy.md`
@@ -38,7 +41,7 @@ This folder contains the architecture and implementation planning set for Awal.
 - `model-and-serving.md`
   - model choices, GPU strategy, serving assumptions, and upgrade path
 - `frontend.md`
-  - minimal product UI for the initial release
+  - product UI notes
 - `operations-and-rebuild.md`
   - repeatable GPU-host bring-up, Fly secret wiring, and post-rebuild checks
 - `diagrams/*`

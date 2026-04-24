@@ -83,7 +83,7 @@ curl http://127.0.0.1:8020/health
 If you are not using Compose, install `vllm` on the box, then run:
 
 ```bash
-API_KEY=awal-vast-key bash deploy/vast/vllm/run-qwen3-8b.sh
+API_KEY=awal-vast-key bash deploy/vast/vllm/run-qwen3-14b.sh
 ```
 
 Health check:

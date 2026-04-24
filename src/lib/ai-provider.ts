@@ -104,7 +104,7 @@ export function getAiRuntimeConfig() {
     process.env.EMBEDDING_API_KEY
   );
   const rerank = getServiceConfig(process.env.RERANK_BASE_URL, process.env.RERANK_API_KEY);
-  const llmModel = process.env.VAST_LLM_MODEL?.trim() || "Qwen/Qwen3-8B";
+  const llmModel = process.env.VAST_LLM_MODEL?.trim() || "Qwen/Qwen3-14B";
   const embeddingModel = process.env.VAST_EMBEDDING_MODEL?.trim() || "BAAI/bge-m3";
   const rerankModel =
     process.env.VAST_RERANK_MODEL?.trim() || "BAAI/bge-reranker-v2-m3";
