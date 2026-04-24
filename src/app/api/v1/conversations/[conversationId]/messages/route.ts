@@ -562,9 +562,9 @@ export async function POST(request: Request, context: RouteContext) {
       ? applyRerankScores({
           matches: initialMatches,
           rerankScores: rerankResult.data,
-          limit: 5
+          limit: 8
         })
-      : initialMatches.slice(0, 5);
+      : initialMatches.slice(0, 8);
 
     let generated:
       | Awaited<ReturnType<typeof generateGroundedAnswer>>

@@ -226,6 +226,72 @@ function buildEvidencePayload(
   ].join("\n");
 }
 
+function buildAnswerVerificationPayload(params: {
+  query: string;
+  matches: EvidenceMatch[];
+  queryProfile?: Pick<QueryProfile, "intent" | "answerGuidance">;
+  draft: {
+    responseKind: "conversational" | "grounded" | "insufficient_evidence";
+    lead: AnswerSegment;
+    bullets: AnswerSegment[];
+  };
+}) {
+  const evidence = params.matches
+    .map((match, index) => {
+      const location = [
+        match.pageStart !== null
+          ? match.pageEnd !== null && match.pageEnd !== match.pageStart
+            ? `pages ${match.pageStart}-${match.pageEnd}`
+            : `page ${match.pageStart}`
+          : null,
+        match.paragraphStart !== null
+          ? match.paragraphEnd !== null && match.paragraphEnd !== match.paragraphStart
+            ? `paragraphs ${match.paragraphStart}-${match.paragraphEnd}`
+            : `paragraph ${match.paragraphStart}`
+          : null,
+        match.lineStart !== null
+          ? match.lineEnd !== null && match.lineEnd !== match.lineStart
+            ? `lines ${match.lineStart}-${match.lineEnd}`
+            : `line ${match.lineStart}`
+          : null
+      ]
+        .filter(Boolean)
+        .join(", ");
+
+      return [
+        `[${index + 1}] ${match.documentTitle}${location ? ` (${location})` : ""}`,
+        match.text.length > 900 ? `${match.text.slice(0, 897).trimEnd()}...` : match.text
+      ].join("\n");
+    })
+    .join("\n\n");
+
+  return [
+    "Question:",
+    params.query,
+    ...buildProfileLines(params.queryProfile),
+    "",
+    "Draft answer JSON:",
+    JSON.stringify(params.draft),
+    "",
+    "Evidence candidates:",
+    evidence || "(none)",
+    "",
+    "Return JSON with this exact shape:",
+    '{"responseKind":"conversational|grounded|insufficient_evidence","lead":{"text":"...","evidenceIds":[1]},"bullets":[{"text":"...","evidenceIds":[1,2]}]}',
+    "",
+    "Verifier rules:",
+    "- Verify every factual claim in the draft against the evidence candidates.",
+    "- Keep only claims directly supported by their evidenceIds. Rewrite or remove claims that are unsupported, over-specific, or only generally implied.",
+    "- If the question contains a concrete example, the example itself is not evidence. Only say a document explicitly mentions that example if the example appears in the evidence text.",
+    "- If a concrete example is covered by a broader documented rule, keep a grounded answer but phrase it as falling under that broader rule. Do not return insufficient_evidence just because the exact example is absent when the broader policy rule clearly applies.",
+    "- Remove weak or tangential evidenceIds. Do not cite evidence that does not directly support the sentence.",
+    "- For comparisons, include evidenceIds for each side being compared; otherwise narrow the answer or use insufficient_evidence.",
+    "- Use insufficient_evidence if the remaining supported claims do not answer the question.",
+    "- Do not add new facts beyond the evidence.",
+    "- Return JSON only."
+  ].join("\n");
+}
+
 function sanitizeGeneratedAnswer(content: string) {
   return content
     .replace(/<think>[\s\S]*?<\/think>/gi, "")
@@ -254,19 +320,27 @@ function normalizeEvidenceIds(evidenceIds: number[], matchCount: number) {
   );
 }
 
+function cleanAnswerText(text: string) {
+  return text
+    .replace(/\s+-\s*bullets\s*\[[\s\S]*$/i, "")
+    .replace(/\s*bullets\s*\[[\s\S]*$/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function normalizeSegment(
   segment: string | { text: string; evidenceIds?: number[] },
   matchCount: number
 ): AnswerSegment {
   if (typeof segment === "string") {
     return {
-      text: segment.trim(),
+      text: cleanAnswerText(segment),
       evidenceIds: []
     };
   }
 
   return {
-    text: segment.text.trim(),
+    text: cleanAnswerText(segment.text),
     evidenceIds: normalizeEvidenceIds(segment.evidenceIds ?? [], matchCount)
   };
 }
@@ -348,6 +422,7 @@ async function requestStructuredChatCompletion(params: {
     content: string;
   }>;
   requireJsonMode?: boolean;
+  maxTokens?: number;
 }) {
   return postJson<{
     choices?: Array<{
@@ -361,6 +436,7 @@ async function requestStructuredChatCompletion(params: {
     body: {
       model: params.model,
       temperature: 0,
+      max_tokens: params.maxTokens ?? 900,
       ...(params.requireJsonMode ? { response_format: { type: "json_object" } } : {}),
       messages: params.messages
     }
@@ -416,6 +492,70 @@ export async function rerankEvidence(params: {
   });
 
   return json;
+}
+
+async function verifyGroundedAnswer(params: {
+  config: ReturnType<typeof getAiRuntimeConfig>;
+  query: string;
+  matches: EvidenceMatch[];
+  queryProfile?: Pick<QueryProfile, "intent" | "answerGuidance">;
+  draft: {
+    responseKind: "conversational" | "grounded" | "insufficient_evidence";
+    lead: AnswerSegment;
+    bullets: AnswerSegment[];
+  };
+}) {
+  if (
+    params.draft.responseKind !== "grounded" ||
+    params.matches.length === 0 ||
+    !params.config.hasGenerationProvider ||
+    !params.config.generationBaseUrl
+  ) {
+    return params.draft;
+  }
+
+  const messages = [
+    {
+      role: "system" as const,
+      content:
+        "You are Awal's evidence verifier. Your job is to audit a drafted document-grounded answer against supplied evidence before it is shown to the user. Be strict: direct evidence is required for every factual claim. Rewrite unsupported wording into narrower supported wording, or return insufficient_evidence. Return JSON only. Do not reveal reasoning."
+    },
+    {
+      role: "user" as const,
+      content: buildAnswerVerificationPayload(params)
+    }
+  ];
+
+  let lastError: Error | null = null;
+
+  for (const requireJsonMode of [true, false]) {
+    try {
+      const json = await requestStructuredChatCompletion({
+        baseUrl: params.config.generationBaseUrl,
+        apiKey: params.config.generationApiKey,
+        model: params.config.llmModel,
+        messages,
+        requireJsonMode,
+        maxTokens: 550
+      });
+      const content = sanitizeGeneratedAnswer(json.choices?.[0]?.message?.content || "");
+      const verified = parseStructuredAnswer(content, params.matches.length);
+
+      if (
+        verified.responseKind === "insufficient_evidence" &&
+        params.queryProfile?.intent === "policy_advice"
+      ) {
+        return params.draft;
+      }
+
+      return verified;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error("answer_verification_failed");
+    }
+  }
+
+  console.warn("answer_verification_failed", lastError);
+  return params.draft;
 }
 
 export async function generateGroundedAnswer(params: {
@@ -475,7 +615,8 @@ export async function generateGroundedAnswer(params: {
         apiKey: config.generationApiKey,
         model: config.llmModel,
         messages,
-        requireJsonMode
+        requireJsonMode,
+        maxTokens: 850
       });
 
       const content = sanitizeGeneratedAnswer(json.choices?.[0]?.message?.content || "");
@@ -505,12 +646,34 @@ export async function generateGroundedAnswer(params: {
     };
   }
 
+  const verified = await verifyGroundedAnswer({
+    config,
+    query: params.query,
+    matches: params.matches,
+    queryProfile: params.queryProfile,
+    draft: parsed
+  });
+
+  if (verified.responseKind === "insufficient_evidence") {
+    return {
+      responseKind: "insufficient_evidence",
+      lead: {
+        text: verified.lead.text,
+        evidenceIds: []
+      },
+      bullets: [],
+      answerState: "insufficient_evidence",
+      modelName: json.model || config.llmModel,
+      provider: "vast-openai-compatible"
+    };
+  }
+
   return {
-    responseKind: parsed.responseKind,
-    lead: parsed.lead,
-    bullets: parsed.bullets,
+    responseKind: verified.responseKind,
+    lead: verified.lead,
+    bullets: verified.bullets,
     answerState:
-      parsed.responseKind === "grounded" || parsed.responseKind === "conversational"
+      verified.responseKind === "grounded" || verified.responseKind === "conversational"
         ? "grounded_answer"
         : "insufficient_evidence",
     modelName: json.model || config.llmModel,
