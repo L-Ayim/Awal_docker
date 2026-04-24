@@ -1,5 +1,5 @@
 import { Check, ChevronDown, ChevronUp, Copy, Pencil } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ChatCitation, ChatMessage, ChatSession } from "@/types/chat";
 
 type ChatMessageListProps = {
@@ -85,7 +85,7 @@ function renderMessageContent(content: string) {
   });
 }
 
-function CitationChips({
+function CitationItems({
   citations,
   activeCitationOrder,
   onToggleCitation
@@ -100,16 +100,21 @@ function CitationChips({
         const active = citation.citationOrder === activeCitationOrder;
 
         return (
-          <button
+          <div
             key={citation.citationOrder}
-            type="button"
-            className={`chat-citation-chip ${active ? "active" : ""}`}
-            onClick={() => onToggleCitation(citation.citationOrder)}
-            aria-expanded={active}
+            className={`chat-citation-item ${active ? "active" : ""}`}
           >
-            <span className="chat-citation-order">{citation.citationOrder}</span>
-            <span>{formatCitationLabel(citation)}</span>
-          </button>
+            <button
+              type="button"
+              className={`chat-citation-chip ${active ? "active" : ""}`}
+              onClick={() => onToggleCitation(citation.citationOrder)}
+              aria-expanded={active}
+            >
+              <span className="chat-citation-order">{citation.citationOrder}</span>
+              <span>{formatCitationLabel(citation)}</span>
+            </button>
+            {active ? <CitationPreview citation={citation} /> : null}
+          </div>
         );
       })}
     </div>
@@ -174,11 +179,6 @@ function MessageBubble({
   const isPendingAssistant =
     message.role === "assistant" &&
     (message.status === "sending" || message.status === "streaming");
-
-  const activeCitation = useMemo(
-    () => citations.find((citation) => citation.citationOrder === activeCitationOrder) ?? null,
-    [activeCitationOrder, citations]
-  );
 
   useEffect(() => {
     if (citations.length === 0) {
@@ -300,16 +300,13 @@ function MessageBubble({
             {referencesOpen ? <ChevronUp aria-hidden="true" /> : <ChevronDown aria-hidden="true" />}
           </button>
           {referencesOpen ? (
-            <>
-              <CitationChips
-                citations={citations}
-                activeCitationOrder={activeCitationOrder}
-                onToggleCitation={(order) =>
-                  setActiveCitationOrder((current) => (current === order ? null : order))
-                }
-              />
-              {activeCitation ? <CitationPreview citation={activeCitation} /> : null}
-            </>
+            <CitationItems
+              citations={citations}
+              activeCitationOrder={activeCitationOrder}
+              onToggleCitation={(order) =>
+                setActiveCitationOrder((current) => (current === order ? null : order))
+              }
+            />
           ) : null}
         </div>
       ) : null}

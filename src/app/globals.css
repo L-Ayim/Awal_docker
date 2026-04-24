@@ -765,14 +765,20 @@ h1 {
 }
 
 .chat-inline-citations {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  gap: 10px;
+}
+
+.chat-citation-item {
+  display: grid;
   gap: 8px;
 }
 
 .chat-citation-chip {
-  display: inline-flex;
+  width: 100%;
+  display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 8px;
   border: 1px solid rgba(16, 82, 224, 0.14);
   border-radius: 999px;
@@ -781,6 +787,7 @@ h1 {
   padding: 8px 12px;
   font: inherit;
   font-size: 0.84rem;
+  text-align: left;
   cursor: pointer;
   transition:
     border-color 140ms ease,
@@ -819,6 +826,7 @@ h1 {
 }
 
 .chat-citation-preview {
+  margin-left: 30px;
   border-radius: 16px;
   border: 1px solid rgba(16, 82, 224, 0.14);
   background: rgba(255, 255, 255, 0.82);
@@ -1097,5 +1105,9 @@ h1 {
 
   .composer-send-button {
     width: 44px;
+  }
+
+  .chat-citation-preview {
+    margin-left: 0;
   }
 }
