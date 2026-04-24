@@ -51,18 +51,28 @@ export function ChatInput({
       {queuedMessages.length > 0 ? (
         <div className="composer-queue" aria-live="polite">
           <div className="composer-queue-header">
-            <span>Queued next</span>
+            <div>
+              <span>Queued steering</span>
+              <p>Edit a queued prompt before it runs, or delete it from the queue.</p>
+            </div>
             <span>{queuedCount}</span>
           </div>
           {queuedMessages.map((message, index) => (
             <div className="composer-queue-item" key={message.id}>
               <span className="composer-queue-number">{index + 1}</span>
-              <textarea
-                value={message.content}
-                onChange={(event) => onQueuedMessageChange(message.id, event.target.value)}
-                aria-label={`Edit queued message ${index + 1}`}
-                rows={1}
-              />
+              <label className="composer-queue-editor">
+                <span>
+                  {index === 0 ? "Next message" : `Queued message ${index + 1}`}
+                  <strong>Waiting</strong>
+                </span>
+                <textarea
+                  value={message.content}
+                  onChange={(event) => onQueuedMessageChange(message.id, event.target.value)}
+                  aria-label={`Edit queued message ${index + 1}`}
+                  placeholder="Steer what Awal should do next..."
+                  rows={1}
+                />
+              </label>
               <button
                 type="button"
                 className="composer-queue-delete"

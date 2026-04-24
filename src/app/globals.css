@@ -918,21 +918,45 @@ h1 {
   display: grid;
   gap: 8px;
   margin-bottom: 12px;
+  padding: 10px;
+  border: 1px solid rgba(16, 82, 224, 0.12);
+  border-radius: 22px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(236, 243, 255, 0.72)),
+    radial-gradient(circle at 8% 0%, rgba(16, 82, 224, 0.12), transparent 16rem);
 }
 
 .composer-queue-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 4px;
+  gap: 12px;
+  padding: 0 4px 2px;
   color: var(--muted);
+}
+
+.composer-queue-header > div {
+  display: grid;
+  gap: 2px;
+}
+
+.composer-queue-header > div > span {
   font-size: 0.76rem;
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
-.composer-queue-header span:last-child {
+.composer-queue-header p {
+  margin: 0;
+  color: rgba(66, 83, 112, 0.82);
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.composer-queue-header > span {
   min-width: 22px;
   height: 22px;
   display: inline-grid;
@@ -946,7 +970,7 @@ h1 {
 .composer-queue-item {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
+  align-items: stretch;
   gap: 10px;
   padding: 9px 10px;
   border: 1px solid rgba(16, 82, 224, 0.14);
@@ -965,9 +989,38 @@ h1 {
   color: var(--accent-contrast);
   font-size: 0.78rem;
   font-weight: 800;
+  align-self: start;
+  margin-top: 20px;
 }
 
-.composer-queue-item textarea {
+.composer-queue-editor {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.composer-queue-editor > span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.composer-queue-editor strong {
+  border-radius: 999px;
+  background: rgba(16, 82, 224, 0.1);
+  color: var(--accent);
+  padding: 3px 8px;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+}
+
+.composer-queue-editor textarea {
   min-height: 38px;
   max-height: 96px;
   padding: 9px 10px;
@@ -988,6 +1041,7 @@ h1 {
   background: rgba(255, 255, 255, 0.86);
   color: #dc2626;
   cursor: pointer;
+  align-self: end;
   transition:
     transform 140ms ease,
     border-color 140ms ease,
@@ -1193,6 +1247,19 @@ h1 {
 
   .composer-send-button {
     width: 44px;
+  }
+
+  .composer-queue-item {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .composer-queue-delete {
+    grid-column: 2;
+    width: 100%;
+  }
+
+  .composer-queue-header {
+    align-items: flex-start;
   }
 
   .chat-citation-preview {
