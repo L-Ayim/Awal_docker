@@ -23,21 +23,39 @@ The services should then be exposed directly on the server's public IP and stabl
 
 ## One-Command Fresh Vast Setup
 
-On a brand-new Vast PyTorch instance, use this command for the 2B test profile:
+On a brand-new Vast PyTorch instance, use one of these commands.
+
+2B test profile:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/L-Ayim/Awal_docker/main/deploy/vast/bootstrap-qwen3-2b.sh | bash
+```
+
+4B test profile:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/L-Ayim/Awal_docker/main/deploy/vast/bootstrap-qwen3-4b.sh | bash
+```
+
+8B test profile:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/L-Ayim/Awal_docker/main/deploy/vast/bootstrap-qwen3-8b.sh | bash
+```
+
+14B baseline profile:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/L-Ayim/Awal_docker/main/deploy/vast/bootstrap-qwen3-14b.sh | bash
+```
+
+The script clones or updates `/workspace/Awal`, installs Python dependencies, starts vLLM, Docling, embeddings, and rerank, then prints the local health checks and ports to tunnel.
+
+The generic version still works if you prefer an explicit profile argument:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/L-Ayim/Awal_docker/main/deploy/vast/bootstrap-vast.sh | bash -s -- 2b
 ```
-
-Other model profiles:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/L-Ayim/Awal_docker/main/deploy/vast/bootstrap-vast.sh | bash -s -- 4b
-curl -fsSL https://raw.githubusercontent.com/L-Ayim/Awal_docker/main/deploy/vast/bootstrap-vast.sh | bash -s -- 8b
-curl -fsSL https://raw.githubusercontent.com/L-Ayim/Awal_docker/main/deploy/vast/bootstrap-vast.sh | bash -s -- 14b
-```
-
-The script clones or updates `/workspace/Awal`, installs Python dependencies, starts vLLM, Docling, embeddings, and rerank, then prints the local health checks and ports to tunnel.
 
 ## Services
 
