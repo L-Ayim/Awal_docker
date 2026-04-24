@@ -52,6 +52,8 @@ Expected local service ports:
 
 If Vast tunnels are used, create tunnels for ports `8000`, `8010`, `8020`, and optionally `8030`.
 
+To compare smaller generators, use `deploy/vast/vllm/run-qwen3.sh` with `2b`, `4b`, `8b`, or `14b`, then update `VAST_LLM_MODEL` on Fly to match. See [Model Size Evaluation](model-size-eval.md).
+
 ## 4. Configure Fly Secrets
 
 ```bash
@@ -128,4 +130,3 @@ The repository now includes:
 - `setup:fresh-db` script for new databases
 - batch folder import and ingestion processing script
 - environment examples for app and Vast runtime
-

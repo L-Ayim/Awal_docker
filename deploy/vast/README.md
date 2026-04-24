@@ -86,6 +86,32 @@ If you are not using Compose, install `vllm` on the box, then run:
 API_KEY=awal-vast-key bash deploy/vast/vllm/run-qwen3-14b.sh
 ```
 
+Smaller-model test profiles are available through the same launcher:
+
+```bash
+API_KEY=awal-vast-key bash deploy/vast/vllm/run-qwen3.sh 2b
+API_KEY=awal-vast-key bash deploy/vast/vllm/run-qwen3.sh 4b
+API_KEY=awal-vast-key bash deploy/vast/vllm/run-qwen3.sh 8b
+API_KEY=awal-vast-key bash deploy/vast/vllm/run-qwen3.sh 14b
+```
+
+The `2b` profile uses `Qwen/Qwen3-1.7B`, which is the closest matching Qwen3 dense text model in that size range.
+
+Wrapper scripts are also provided:
+
+```bash
+bash deploy/vast/vllm/run-qwen3-2b.sh
+bash deploy/vast/vllm/run-qwen3-4b.sh
+bash deploy/vast/vllm/run-qwen3-8b.sh
+bash deploy/vast/vllm/run-qwen3-14b.sh
+```
+
+After switching the served model, update Fly so the app records and reports the model correctly:
+
+```bash
+flyctl secrets set VAST_LLM_MODEL="Qwen/Qwen3-8B"
+```
+
 Health check:
 
 ```bash

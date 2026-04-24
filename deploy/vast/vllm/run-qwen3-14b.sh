@@ -1,18 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-MODEL_NAME="${MODEL_NAME:-Qwen/Qwen3-14B}"
-API_KEY="${API_KEY:-awal-vast-key}"
-PORT="${PORT:-8000}"
-MAX_MODEL_LEN="${MAX_MODEL_LEN:-4096}"
-GPU_MEMORY_UTILIZATION="${GPU_MEMORY_UTILIZATION:-0.82}"
-
-vllm serve "$MODEL_NAME" \
-  --host 0.0.0.0 \
-  --port "$PORT" \
-  --api-key "$API_KEY" \
-  --dtype auto \
-  --generation-config vllm \
-  --enforce-eager \
-  --max-model-len "$MAX_MODEL_LEN" \
-  --gpu-memory-utilization "$GPU_MEMORY_UTILIZATION"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec "$SCRIPT_DIR/run-qwen3.sh" 14b
