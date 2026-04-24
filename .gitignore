@@ -4,6 +4,7 @@ node_modules
 .env.local
 dist
 coverage
+reports/
 *.log
 prisma/dev.db
 prisma/dev.db-journal

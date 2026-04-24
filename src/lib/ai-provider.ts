@@ -60,9 +60,9 @@ const bulletSegmentSchema = z.union([
 ]);
 
 const structuredAnswerSchema = z.object({
-  responseKind: z.enum(["conversational", "grounded", "insufficient_evidence"]),
+  responseKind: z.string().trim().min(1),
   lead: answerSegmentSchema,
-  bullets: z.array(bulletSegmentSchema).max(4).default([])
+  bullets: z.array(bulletSegmentSchema).default([])
 });
 
 const memoryObjectSchema = z.object({
@@ -146,7 +146,7 @@ function buildEvidencePayload(
       "(none)",
       "",
       "Return JSON with this exact shape:",
-      '{"responseKind":"conversational|grounded|insufficient_evidence","lead":{"text":"...","evidenceIds":[]},"bullets":[{"text":"...","evidenceIds":[1]}]}',
+      '{"responseKind":"insufficient_evidence","lead":{"text":"...","evidenceIds":[]},"bullets":[]}',
       "",
       "Rules:",
       "- Use the supplied question intent and answer guidance when present.",
@@ -201,7 +201,7 @@ function buildEvidencePayload(
     evidence,
     "",
     "Return JSON with this exact shape:",
-    '{"responseKind":"conversational|grounded|insufficient_evidence","lead":{"text":"...","evidenceIds":[1]},"bullets":[{"text":"...","evidenceIds":[1,2]}]}',
+    '{"responseKind":"grounded","lead":{"text":"...","evidenceIds":[1]},"bullets":[{"text":"...","evidenceIds":[1,2]}]}',
     "",
     "Rules:",
     "- Read the question and decide whether the evidence is actually needed to answer it.",
@@ -277,7 +277,7 @@ function buildAnswerVerificationPayload(params: {
     evidence || "(none)",
     "",
     "Return JSON with this exact shape:",
-    '{"responseKind":"conversational|grounded|insufficient_evidence","lead":{"text":"...","evidenceIds":[1]},"bullets":[{"text":"...","evidenceIds":[1,2]}]}',
+    '{"responseKind":"grounded","lead":{"text":"...","evidenceIds":[1]},"bullets":[{"text":"...","evidenceIds":[1,2]}]}',
     "",
     "Verifier rules:",
     "- Verify every factual claim in the draft against the evidence candidates.",
@@ -301,13 +301,110 @@ function sanitizeGeneratedAnswer(content: string) {
 
 function extractJsonObject(content: string) {
   const start = content.indexOf("{");
-  const end = content.lastIndexOf("}");
 
-  if (start < 0 || end < start) {
+  if (start < 0) {
     throw new Error("Model did not return a JSON object.");
   }
 
-  return content.slice(start, end + 1);
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = start; index < content.length; index += 1) {
+    const char = content[index];
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (char === "\\") {
+      escaped = inString;
+      continue;
+    }
+
+    if (char === "\"") {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) {
+      continue;
+    }
+
+    if (char === "{") {
+      depth += 1;
+    }
+
+    if (char === "}") {
+      depth -= 1;
+
+      if (depth === 0) {
+        return content.slice(start, index + 1);
+      }
+    }
+  }
+
+  throw new Error("Model did not return a complete JSON object.");
+}
+
+function parseJsonObjectLenient(content: string) {
+  const jsonText = extractJsonObject(content);
+
+  try {
+    return JSON.parse(jsonText);
+  } catch (firstError) {
+    const repaired = jsonText
+      .replace(/,\s*([}\]])/g, "$1")
+      .replace(/"evidenceIds"\s*:\s*\[([^\]\}]*?)(?=,\s*"|\s*\})/g, (_match, ids) => {
+        const normalizedIds = String(ids)
+          .split(",")
+          .map((value) => value.trim())
+          .filter((value) => /^\d+$/.test(value))
+          .join(",");
+
+        return `"evidenceIds":[${normalizedIds}]`;
+      });
+
+    try {
+      return JSON.parse(repaired);
+    } catch {
+      throw firstError;
+    }
+  }
+}
+
+function normalizeResponseKind(
+  value: string,
+  params: {
+    lead: AnswerSegment;
+    bullets: AnswerSegment[];
+    matchCount: number;
+  }
+): "conversational" | "grounded" | "insufficient_evidence" {
+  const normalized = value.toLowerCase().trim();
+
+  if (normalized === "conversational") {
+    return "conversational";
+  }
+
+  if (normalized === "grounded") {
+    return "grounded";
+  }
+
+  if (normalized === "insufficient_evidence" || normalized.includes("insufficient")) {
+    return "insufficient_evidence";
+  }
+
+  const evidenceCount =
+    params.lead.evidenceIds.length +
+    params.bullets.reduce((sum, bullet) => sum + bullet.evidenceIds.length, 0);
+
+  if (evidenceCount > 0 && params.matchCount > 0) {
+    return "grounded";
+  }
+
+  return "insufficient_evidence";
 }
 
 function normalizeEvidenceIds(evidenceIds: number[], matchCount: number) {
@@ -346,23 +443,30 @@ function normalizeSegment(
 }
 
 function parseStructuredAnswer(content: string, matchCount: number) {
-  const raw = JSON.parse(extractJsonObject(content));
+  const raw = parseJsonObjectLenient(content);
   const parsed = structuredAnswerSchema.parse(raw);
 
   const lead = normalizeSegment(parsed.lead, matchCount);
-  const bullets = parsed.bullets.map((bullet) => normalizeSegment(bullet, matchCount));
+  const bullets = parsed.bullets
+    .slice(0, 4)
+    .map((bullet) => normalizeSegment(bullet, matchCount));
+  const responseKind = normalizeResponseKind(parsed.responseKind, {
+    lead,
+    bullets,
+    matchCount
+  });
 
-  if (parsed.responseKind === "conversational") {
+  if (responseKind === "conversational") {
     return {
-      responseKind: parsed.responseKind,
+      responseKind,
       lead: { ...lead, evidenceIds: [] },
       bullets: []
     };
   }
 
-  if (parsed.responseKind !== "grounded") {
+  if (responseKind !== "grounded") {
     return {
-      responseKind: parsed.responseKind,
+      responseKind,
       lead: { ...lead, evidenceIds: [] },
       bullets: bullets.map((bullet) => ({ ...bullet, evidenceIds: [] }))
     };
@@ -383,7 +487,7 @@ function parseStructuredAnswer(content: string, matchCount: number) {
   }
 
   return {
-    responseKind: parsed.responseKind,
+    responseKind,
     lead,
     bullets
   };
