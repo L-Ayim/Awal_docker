@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FileText, Play, RefreshCw, RotateCw, Trash2, Upload } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ChevronDown, FileText, Play, RefreshCw, RotateCw, Trash2, Upload } from "lucide-react";
 
 type BootstrapResponse = {
   workspace: {
@@ -44,6 +44,88 @@ type DocumentRow = {
   } | null;
 };
 
+type DocumentDetail = {
+  document: {
+    id: string;
+    title: string;
+    sourceKind: string;
+    mimeType: string;
+    status: string;
+    createdAt: string;
+    updatedAt: string;
+    latestRevision: {
+      id: string;
+      checksum: string | null;
+      storageUri: string | null;
+      fileSizeBytes: string | null;
+      status: string;
+      extractionQuality: string | null;
+      ingestionMode: string;
+      reviewFlag: boolean;
+      qualityNotes: string | null;
+      createdAt: string;
+      updatedAt: string;
+      jobs: Array<{
+        id: string;
+        status: string;
+        attemptCount: number;
+        workerHint: string | null;
+        queuedAt: string;
+        startedAt: string | null;
+        completedAt: string | null;
+        lastError: string | null;
+      }>;
+      sections: Array<{
+        id: string;
+        sectionPath: string;
+        heading: string | null;
+        ordinal: number;
+      }>;
+      chunks: Array<{
+        id: string;
+        chunkIndex: number;
+        text: string;
+        tokenCount: number | null;
+        charCount: number;
+        pageStart: number | null;
+        pageEnd: number | null;
+        paragraphStart: number | null;
+        paragraphEnd: number | null;
+        lineStart: number | null;
+        lineEnd: number | null;
+        citationQuotedText: string | null;
+        embedding: {
+          modelName: string;
+          dimensions: number;
+        } | null;
+      }>;
+      indexCards: Array<{
+        id: string;
+        kind: string;
+        title: string;
+        body: string;
+        summary: string | null;
+        tags: string[];
+        aliases: string[];
+        pageStart: number | null;
+        pageEnd: number | null;
+        paragraphStart: number | null;
+        paragraphEnd: number | null;
+        lineStart: number | null;
+        lineEnd: number | null;
+        chunk: {
+          id: string;
+          chunkIndex: number;
+        } | null;
+        embedding: {
+          modelName: string;
+          dimensions: number;
+        } | null;
+      }>;
+    } | null;
+  };
+};
+
 type DocumentsResponse = {
   documents: DocumentRow[];
 };
@@ -83,32 +165,39 @@ function statusLabel(document: DocumentRow) {
   return document.latestJob?.status || document.latestRevision?.status || document.status;
 }
 
+function formatDate(value: string | null) {
+  if (!value) {
+    return "n/a";
+  }
+
+  return new Date(value).toLocaleString();
+}
+
 export function UploadConsole() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const [bootstrap, setBootstrap] = useState<BootstrapResponse | null>(null);
   const [documents, setDocuments] = useState<DocumentRow[]>([]);
+  const [detailsById, setDetailsById] = useState<Record<string, DocumentDetail["document"] | undefined>>({});
+  const [expandedIds, setExpandedIds] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
+  const [isDeduplicating, setIsDeduplicating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const documentUrl = useMemo(() => {
-    if (!bootstrap) {
-      return null;
-    }
+  const documentUrl = bootstrap
+    ? `/api/v1/workspaces/${bootstrap.workspace.id}/collections/${bootstrap.collection.id}/documents`
+    : null;
 
-    return `/api/v1/workspaces/${bootstrap.workspace.id}/collections/${bootstrap.collection.id}/documents`;
-  }, [bootstrap]);
-
-  const refreshDocuments = useCallback(async () => {
+  async function refreshDocuments() {
     if (!documentUrl) {
       return;
     }
 
     const payload = await parseJson<DocumentsResponse>(await fetch(documentUrl));
     setDocuments(payload.documents);
-  }, [documentUrl]);
+  }
 
   useEffect(() => {
     let alive = true;
@@ -153,7 +242,31 @@ export function UploadConsole() {
     }, 8000);
 
     return () => window.clearInterval(id);
-  }, [documentUrl, refreshDocuments]);
+  }, [documentUrl]);
+
+  async function ensureDetail(documentId: string) {
+    if (detailsById[documentId]) {
+      return;
+    }
+
+    const payload = await parseJson<DocumentDetail>(await fetch(`/api/v1/documents/${documentId}`));
+    setDetailsById((current) => ({
+      ...current,
+      [documentId]: payload.document
+    }));
+  }
+
+  async function toggleExpanded(documentId: string) {
+    const isExpanded = expandedIds.includes(documentId);
+
+    if (isExpanded) {
+      setExpandedIds((current) => current.filter((id) => id !== documentId));
+      return;
+    }
+
+    await ensureDetail(documentId);
+    setExpandedIds((current) => [...current, documentId]);
+  }
 
   async function runNextJob() {
     try {
@@ -165,6 +278,25 @@ export function UploadConsole() {
       setError(nextError instanceof Error ? nextError.message : "Failed to run ingestion.");
     } finally {
       setIsRunning(false);
+    }
+  }
+
+  async function removeDuplicates() {
+    if (!documentUrl) {
+      return;
+    }
+
+    try {
+      setIsDeduplicating(true);
+      setError(null);
+      await parseJson(await fetch(`${documentUrl}/deduplicate`, { method: "POST" }));
+      setExpandedIds([]);
+      setDetailsById({});
+      await refreshDocuments();
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Failed to remove duplicates.");
+    } finally {
+      setIsDeduplicating(false);
     }
   }
 
@@ -212,6 +344,11 @@ export function UploadConsole() {
           method: "POST"
         })
       );
+      setDetailsById((current) => {
+        const next = { ...current };
+        delete next[document.id];
+        return next;
+      });
       await refreshDocuments();
       void runNextJob();
     } catch (nextError) {
@@ -233,6 +370,12 @@ export function UploadConsole() {
           method: "DELETE"
         })
       );
+      setExpandedIds((current) => current.filter((id) => id !== document.id));
+      setDetailsById((current) => {
+        const next = { ...current };
+        delete next[document.id];
+        return next;
+      });
       await refreshDocuments();
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Failed to delete document.");
@@ -262,6 +405,10 @@ export function UploadConsole() {
           <button type="button" onClick={() => void refreshDocuments()} disabled={!documentUrl}>
             <RefreshCw aria-hidden="true" />
             <span>Refresh</span>
+          </button>
+          <button type="button" onClick={() => void removeDuplicates()} disabled={isDeduplicating || !documentUrl}>
+            <Trash2 aria-hidden="true" />
+            <span>{isDeduplicating ? "Removing" : "Remove duplicates"}</span>
           </button>
         </div>
       </header>
@@ -316,41 +463,122 @@ export function UploadConsole() {
         ) : documents.length === 0 ? (
           <div className="upload-console-empty">No documents uploaded yet.</div>
         ) : (
-          documents.map((document) => (
-            <article className="upload-document-row" key={document.id}>
-              <div className="upload-document-icon">
-                <FileText aria-hidden="true" />
-              </div>
-              <div className="upload-document-main">
-                <div className="upload-document-title">
-                  <strong>{document.title}</strong>
-                  <span>{statusLabel(document)}</span>
+          documents.map((document) => {
+            const detail = detailsById[document.id];
+            const expanded = expandedIds.includes(document.id);
+
+            return (
+              <article className="upload-document-card" key={document.id}>
+                <div className="upload-document-row">
+                  <div className="upload-document-icon">
+                    <FileText aria-hidden="true" />
+                  </div>
+                  <div className="upload-document-main">
+                    <div className="upload-document-title">
+                      <strong>{document.title}</strong>
+                      <span>{statusLabel(document)}</span>
+                    </div>
+                    <div className="upload-document-meta">
+                      <span>{document.mimeType}</span>
+                      <span>{formatBytes(document.latestRevision?.fileSizeBytes ?? null)}</span>
+                      <span>{document.latestRevision?.chunkCount ?? 0} chunks</span>
+                      <span>{document.latestRevision?.indexCardCount ?? 0} cards</span>
+                    </div>
+                    {document.latestRevision?.qualityNotes ? (
+                      <p className="upload-document-note">{document.latestRevision.qualityNotes}</p>
+                    ) : document.latestJob?.lastError ? (
+                      <p className="upload-document-note error">{document.latestJob.lastError}</p>
+                    ) : null}
+                  </div>
+                  <div className="upload-document-actions">
+                    <button type="button" onClick={() => void toggleExpanded(document.id)} title="Details">
+                      <ChevronDown aria-hidden="true" className={expanded ? "expanded" : ""} />
+                    </button>
+                    <a href={`/api/v1/documents/${document.id}/download`} title="Download">
+                      Download
+                    </a>
+                    <button type="button" onClick={() => void reprocessDocument(document)} title="Reprocess">
+                      <RotateCw aria-hidden="true" />
+                    </button>
+                    <button type="button" onClick={() => void deleteDocument(document)} title="Delete">
+                      <Trash2 aria-hidden="true" />
+                    </button>
+                  </div>
                 </div>
-                <div className="upload-document-meta">
-                  <span>{document.mimeType}</span>
-                  <span>{formatBytes(document.latestRevision?.fileSizeBytes ?? null)}</span>
-                  <span>{document.latestRevision?.chunkCount ?? 0} chunks</span>
-                  <span>{document.latestRevision?.indexCardCount ?? 0} cards</span>
-                </div>
-                {document.latestRevision?.qualityNotes ? (
-                  <p className="upload-document-note">{document.latestRevision.qualityNotes}</p>
-                ) : document.latestJob?.lastError ? (
-                  <p className="upload-document-note error">{document.latestJob.lastError}</p>
+
+                {expanded && detail?.latestRevision ? (
+                  <div className="upload-document-detail">
+                    <section className="upload-detail-grid">
+                      <div>
+                        <h3>Revision</h3>
+                        <p>Status: {detail.latestRevision.status}</p>
+                        <p>Quality: {detail.latestRevision.extractionQuality ?? "n/a"}</p>
+                        <p>Mode: {detail.latestRevision.ingestionMode}</p>
+                        <p>Checksum: {detail.latestRevision.checksum ?? "n/a"}</p>
+                        <p>Size: {formatBytes(detail.latestRevision.fileSizeBytes)}</p>
+                        <p>Updated: {formatDate(detail.latestRevision.updatedAt)}</p>
+                      </div>
+                      <div>
+                        <h3>Jobs</h3>
+                        {detail.latestRevision.jobs.length === 0 ? (
+                          <p>No jobs recorded.</p>
+                        ) : (
+                          detail.latestRevision.jobs.map((job) => (
+                            <div key={job.id} className="upload-detail-block">
+                              <p>{job.status} · attempts {job.attemptCount}</p>
+                              <p>{formatDate(job.queuedAt)}</p>
+                              {job.lastError ? <p className="upload-document-note error">{job.lastError}</p> : null}
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </section>
+
+                    <section className="upload-detail-section">
+                      <h3>Index cards</h3>
+                      {detail.latestRevision.indexCards.length === 0 ? (
+                        <p>No index cards generated.</p>
+                      ) : (
+                        <div className="upload-detail-list">
+                          {detail.latestRevision.indexCards.map((card) => (
+                            <article key={card.id} className="upload-detail-item">
+                              <strong>{card.title}</strong>
+                              <p>{card.kind}{card.chunk ? ` · chunk ${card.chunk.chunkIndex}` : ""}</p>
+                              {card.summary ? <p>{card.summary}</p> : null}
+                              <p>{card.body}</p>
+                              <p>Tags: {card.tags.join(", ") || "n/a"}</p>
+                              <p>Aliases: {card.aliases.join(", ") || "n/a"}</p>
+                            </article>
+                          ))}
+                        </div>
+                      )}
+                    </section>
+
+                    <section className="upload-detail-section">
+                      <h3>Chunks</h3>
+                      {detail.latestRevision.chunks.length === 0 ? (
+                        <p>No chunks generated.</p>
+                      ) : (
+                        <div className="upload-detail-list">
+                          {detail.latestRevision.chunks.map((chunk) => (
+                            <article key={chunk.id} className="upload-detail-item">
+                              <strong>Chunk {chunk.chunkIndex}</strong>
+                              <p>
+                                {chunk.tokenCount ?? "n/a"} tokens · {chunk.charCount} chars
+                                {chunk.pageStart !== null ? ` · pages ${chunk.pageStart}-${chunk.pageEnd ?? chunk.pageStart}` : ""}
+                              </p>
+                              {chunk.citationQuotedText ? <p>{chunk.citationQuotedText}</p> : null}
+                              <p>{chunk.text}</p>
+                            </article>
+                          ))}
+                        </div>
+                      )}
+                    </section>
+                  </div>
                 ) : null}
-              </div>
-              <div className="upload-document-actions">
-                <a href={`/api/v1/documents/${document.id}/download`} title="Download">
-                  Download
-                </a>
-                <button type="button" onClick={() => void reprocessDocument(document)} title="Reprocess">
-                  <RotateCw aria-hidden="true" />
-                </button>
-                <button type="button" onClick={() => void deleteDocument(document)} title="Delete">
-                  <Trash2 aria-hidden="true" />
-                </button>
-              </div>
-            </article>
-          ))
+              </article>
+            );
+          })
         )}
       </section>
     </main>

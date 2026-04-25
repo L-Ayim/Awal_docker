@@ -338,6 +338,7 @@ h1 {
 }
 
 .upload-console-empty,
+.upload-document-card,
 .upload-document-row {
   border: 1px solid rgba(217, 226, 236, 0.9);
   border-radius: 8px;
@@ -348,6 +349,10 @@ h1 {
   padding: 28px;
   color: var(--muted);
   text-align: center;
+}
+
+.upload-document-card {
+  overflow: hidden;
 }
 
 .upload-document-row {
@@ -426,9 +431,63 @@ h1 {
   gap: 8px;
 }
 
+.upload-document-actions .expanded {
+  transform: rotate(180deg);
+}
+
 .upload-document-actions button {
   width: 38px;
   padding: 0;
+}
+
+.upload-document-detail {
+  border-top: 1px solid rgba(217, 226, 236, 0.9);
+  padding: 16px;
+  background: #f9fbff;
+}
+
+.upload-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.upload-detail-grid h3,
+.upload-detail-section h3 {
+  margin: 0 0 8px;
+  font-size: 0.92rem;
+}
+
+.upload-detail-grid p,
+.upload-detail-item p {
+  margin: 4px 0 0;
+  font-size: 0.86rem;
+  line-height: 1.45;
+  color: #334155;
+  overflow-wrap: anywhere;
+}
+
+.upload-detail-section {
+  margin-top: 16px;
+}
+
+.upload-detail-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.upload-detail-item,
+.upload-detail-block {
+  padding: 12px;
+  border: 1px solid rgba(217, 226, 236, 0.9);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.upload-detail-item strong {
+  display: block;
+  font-size: 0.9rem;
 }
 
 @media (max-width: 760px) {
@@ -455,6 +514,10 @@ h1 {
 
   .upload-document-actions {
     grid-column: 1 / -1;
+  }
+
+  .upload-detail-grid {
+    grid-template-columns: 1fr;
   }
 }
 
