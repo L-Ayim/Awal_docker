@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isGpuRuntimeAutomationEnabled, resolveGpuRuntimeEndpoints } from "@/lib/gpu-runtime";
 import type { QueryProfile } from "@/lib/query-understanding";
 
 type EvidenceMatch = {
@@ -110,8 +111,8 @@ export function getAiRuntimeConfig() {
     process.env.VAST_RERANK_MODEL?.trim() || "BAAI/bge-reranker-v2-m3";
 
   return {
-    hasGenerationProvider: generation.configured,
-    hasEmbeddingProvider: embeddings.configured,
+    hasGenerationProvider: generation.configured || isGpuRuntimeAutomationEnabled(),
+    hasEmbeddingProvider: embeddings.configured || isGpuRuntimeAutomationEnabled(),
     hasRerankProvider: rerank.configured,
     generationBaseUrl: generation.baseUrl,
     embeddingBaseUrl: embeddings.baseUrl,
@@ -122,6 +123,21 @@ export function getAiRuntimeConfig() {
     llmModel,
     embeddingModel,
     rerankModel
+  };
+}
+
+async function getResolvedAiRuntimeConfig() {
+  const config = getAiRuntimeConfig();
+  const runtime = await resolveGpuRuntimeEndpoints();
+
+  return {
+    ...config,
+    hasGenerationProvider: Boolean(runtime.llmBaseUrl) || config.hasGenerationProvider,
+    hasEmbeddingProvider: Boolean(runtime.embeddingBaseUrl) || config.hasEmbeddingProvider,
+    hasRerankProvider: Boolean(runtime.rerankBaseUrl) || config.hasRerankProvider,
+    generationBaseUrl: runtime.llmBaseUrl || config.generationBaseUrl,
+    embeddingBaseUrl: runtime.embeddingBaseUrl || config.embeddingBaseUrl,
+    rerankBaseUrl: runtime.rerankBaseUrl || config.rerankBaseUrl
   };
 }
 
@@ -552,7 +568,7 @@ async function requestStructuredChatCompletion(params: {
 }
 
 export async function generateEmbeddings(inputs: string[]) {
-  const config = getAiRuntimeConfig();
+  const config = await getResolvedAiRuntimeConfig();
 
   if (!config.hasEmbeddingProvider || !config.embeddingBaseUrl) {
     throw new Error("Embedding provider is not configured.");
@@ -579,7 +595,7 @@ export async function rerankEvidence(params: {
   query: string;
   matches: EvidenceMatch[];
 }) {
-  const config = getAiRuntimeConfig();
+  const config = await getResolvedAiRuntimeConfig();
 
   if (!config.hasRerankProvider || !config.rerankBaseUrl) {
     return null;
@@ -603,7 +619,7 @@ export async function rerankEvidence(params: {
 }
 
 async function verifyGroundedAnswer(params: {
-  config: ReturnType<typeof getAiRuntimeConfig>;
+  config: Awaited<ReturnType<typeof getResolvedAiRuntimeConfig>>;
   query: string;
   matches: EvidenceMatch[];
   queryProfile?: Pick<QueryProfile, "intent" | "answerGuidance">;
@@ -668,7 +684,7 @@ export async function generateGroundedAnswer(params: {
   matches: EvidenceMatch[];
   queryProfile?: Pick<QueryProfile, "intent" | "answerGuidance">;
 }): Promise<GenerationResult> {
-  const config = getAiRuntimeConfig();
+  const config = await getResolvedAiRuntimeConfig();
 
   if (!config.hasGenerationProvider || !config.generationBaseUrl) {
     return {
@@ -799,7 +815,7 @@ export async function generateDocumentMemoryObjects(params: {
     lineEnd: number | null;
   }>;
 }) {
-  const config = getAiRuntimeConfig();
+  const config = await getResolvedAiRuntimeConfig();
 
   if (!config.hasGenerationProvider || !config.generationBaseUrl || params.chunks.length === 0) {
     return {

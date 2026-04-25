@@ -63,6 +63,14 @@ enum AnswerState {
   ingestion_pending
 }
 
+enum GpuRuntimeStatus {
+  asleep
+  waking
+  ready
+  stopping
+  failed
+}
+
 model Workspace {
   id            String         @id @default(cuid())
   name          String
@@ -362,4 +370,28 @@ model AuditEvent {
 
   @@index([workspaceId])
   @@index([eventType])
+}
+
+model GpuRuntime {
+  id               String           @id @default("default")
+  provider         String           @default("runpod")
+  status           GpuRuntimeStatus @default(asleep)
+  podId            String?
+  podName          String?
+  publicIp         String?
+  llmBaseUrl       String?
+  doclingBaseUrl   String?
+  embeddingBaseUrl String?
+  rerankBaseUrl    String?
+  portMappingsJson Json?
+  lastRequestAt    DateTime?
+  lastHealthAt     DateTime?
+  lastWakeAt       DateTime?
+  lastSleepAt      DateTime?
+  lastError        String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  @@index([status])
+  @@index([lastRequestAt])
 }
