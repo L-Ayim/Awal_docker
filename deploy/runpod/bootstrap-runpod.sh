@@ -9,7 +9,8 @@ VOLUME_DIR="${AWAL_VOLUME_DIR:-/workspace}"
 VENV_DIR="${AWAL_VENV_DIR:-/workspace/venvs/awal-runtime}"
 FAST_START="${RUNPOD_FAST_START:-0}"
 FORCE_INSTALL="${RUNPOD_FORCE_INSTALL:-0}"
-DEPS_STAMP="$VOLUME_DIR/.awal-runtime-deps-v2"
+VENV_SYSTEM_SITE_PACKAGES="${AWAL_VENV_SYSTEM_SITE_PACKAGES:-1}"
+DEPS_STAMP="$VOLUME_DIR/.awal-runtime-deps-v3"
 KEEPALIVE="${RUNPOD_KEEPALIVE:-1}"
 
 VLLM_API_KEY="${VLLM_API_KEY:-awal-runpod-key}"
@@ -79,9 +80,21 @@ install_python_dependencies() {
   log "Installing Python dependencies into $VENV_DIR"
   cd "$WORKDIR"
 
-  python -m venv "$VENV_DIR"
+  if [ -d "$VENV_DIR" ] && [ ! -f "$DEPS_STAMP" ]; then
+    log "Removing incomplete Python runtime at $VENV_DIR"
+    rm -rf "$VENV_DIR"
+  fi
+
+  if [ "$VENV_SYSTEM_SITE_PACKAGES" = "1" ]; then
+    python -m venv --system-site-packages "$VENV_DIR"
+  else
+    python -m venv "$VENV_DIR"
+  fi
+
   # shellcheck disable=SC1091
   source "$VENV_DIR/bin/activate"
+
+  export PIP_NO_CACHE_DIR=1
 
   python -m pip install --upgrade pip
 
