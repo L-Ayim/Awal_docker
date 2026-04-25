@@ -24,13 +24,14 @@ Awal is not a general web-knowledge assistant. Its runtime should prefer explici
   - workspaces, collections, documents, revisions
   - chunks, citation spans, index cards, embeddings
   - conversations, retrieval traces, answer citations
-- `Tigris/S3-compatible storage`
+- `Backblaze B2/S3-compatible storage`
   - durable upload storage when configured
   - local file storage fallback for development
-- `Vast.ai`
+- `RunPod` / `Vast.ai`
   - model inference and document-processing services
+  - RunPod Network Volume for hot model cache in the 32B deployment
 - `Open-source models`
-  - generation: `Qwen/Qwen3-14B`
+  - generation: `Qwen/Qwen3-32B` for premium deployment, `Qwen/Qwen3-14B` as fallback
   - embeddings: `BAAI/bge-m3`
   - optional reranking: `BAAI/bge-reranker-v2-m3`
 
@@ -63,8 +64,11 @@ For a full new server/new database rebuild, follow [Fresh Server And Database Se
 - [Model and Serving Plan](docs/model-and-serving.md)
 - [Frontend](docs/frontend.md)
 - [Operations And Rebuild](docs/operations-and-rebuild.md)
+- [RunPod + Backblaze 32B Plan](docs/runpod-backblaze-32b-plan.md)
+- [RunPod Auto Shutdown](docs/runpod-auto-shutdown.md)
 - [Diagrams](docs/diagrams/README.md)
 - [Vast Deployment Assets](deploy/vast/README.md)
+- [RunPod Deployment Assets](deploy/runpod/README.md)
 
 ## Architectural Stance
 

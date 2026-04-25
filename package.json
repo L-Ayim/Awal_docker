@@ -12,7 +12,10 @@
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
-    "setup:fresh-db": "node scripts/setup-fresh-db.mjs"
+    "setup:fresh-db": "node scripts/setup-fresh-db.mjs",
+    "runpod:status": "node scripts/runpod-controller.mjs status",
+    "runpod:wake": "node scripts/runpod-controller.mjs wake",
+    "runpod:sleep": "node scripts/runpod-controller.mjs sleep"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1035.0",
