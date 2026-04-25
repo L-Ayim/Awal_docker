@@ -590,6 +590,14 @@ async function refreshRuntimeFromRunPod(profile: RuntimeProfile) {
   return markPodReady(pod, profile);
 }
 
+export async function refreshGpuRuntimeState(kind: GpuRuntimeKind = "chat") {
+  if (!isGpuRuntimeAutomationEnabled()) {
+    return getGpuRuntimeState(kind);
+  }
+
+  return refreshRuntimeFromRunPod(getRuntimeProfile(kind));
+}
+
 async function waitForRuntime(podId: string, profile: RuntimeProfile) {
   const attempts = optionalNumberEnv("RUNPOD_HEALTH_ATTEMPTS", 180);
   const delayMs = optionalNumberEnv("RUNPOD_HEALTH_DELAY_MS", 5000);
