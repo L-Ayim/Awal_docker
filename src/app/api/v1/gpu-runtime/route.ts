@@ -10,10 +10,11 @@ export async function GET() {
   try {
     const cachedRuntime = await getGpuRuntimeState();
     const cachedIngestRuntime = await getGpuRuntimeState("ingest");
+    const shouldRefresh = (status: string) => status === "waking" || status === "ready";
     const runtime =
-      cachedRuntime.status === "waking" ? await refreshGpuRuntimeState("chat") : cachedRuntime;
+      shouldRefresh(cachedRuntime.status) ? await refreshGpuRuntimeState("chat") : cachedRuntime;
     const ingestRuntime =
-      cachedIngestRuntime.status === "waking"
+      shouldRefresh(cachedIngestRuntime.status)
         ? await refreshGpuRuntimeState("ingest")
         : cachedIngestRuntime;
 
