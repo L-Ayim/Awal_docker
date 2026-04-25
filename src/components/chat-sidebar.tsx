@@ -43,6 +43,12 @@ export function ChatSidebar({
       {isOpen ? <button className="mobile-sidebar-overlay" onClick={onClose} aria-label="Close sidebar" /> : null}
       <aside className={`sidebar ${isOpen ? "sidebar-mobile-open" : ""} ${isCollapsed ? "sidebar-collapsed" : ""}`}>
         <div className="sidebar-brand">
+          <h1>
+            <span className="sidebar-brand-mark">
+              <img src="/awal-logo.png" alt="Awal logo" />
+            </span>
+            <span className="sidebar-brand-wordmark">Awal</span>
+          </h1>
           {!isCollapsed ? (
             <button
               className="sidebar-collapse-toggle"
@@ -54,12 +60,6 @@ export function ChatSidebar({
               <PanelLeftClose aria-hidden="true" />
             </button>
           ) : null}
-          <h1>
-            <span className="sidebar-brand-mark">
-              <img src="/awal-logo.png" alt="Awal logo" />
-            </span>
-            <span className="sidebar-brand-wordmark">Awal</span>
-          </h1>
         </div>
 
         <button

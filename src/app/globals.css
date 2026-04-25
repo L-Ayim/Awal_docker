@@ -115,14 +115,18 @@ h1 {
   font-weight: 700;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 12px;
+  margin: 0;
 }
 
 .sidebar-brand {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  justify-content: center;
+  min-height: 40px;
+  position: relative;
+  width: 100%;
 }
 
 .sidebar-brand p {
@@ -149,6 +153,10 @@ h1 {
 }
 
 .sidebar-collapse-toggle {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
   border: 0;
   border-radius: 12px;
   width: 40px;
