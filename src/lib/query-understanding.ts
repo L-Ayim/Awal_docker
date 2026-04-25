@@ -56,6 +56,18 @@ const PROCEDURE_TERMS = [
   "workflow"
 ];
 
+const CONTROL_SUMMARY_TERMS = [
+  "control",
+  "controls",
+  "protect",
+  "protecting",
+  "protection",
+  "safeguard",
+  "safeguards",
+  "sensitive",
+  "security"
+];
+
 const PEOPLE_TERMS = [
   "head",
   "heads",
@@ -98,6 +110,15 @@ function classifyQueryIntent(question: string): QueryIntent {
 
   if (/\b(list|all|other|how many|which)\b/i.test(normalized)) {
     return "list";
+  }
+
+  if (
+    includesAny(normalized, CONTROL_SUMMARY_TERMS) &&
+    /\b(main|key|major|important|primary|protect|protecting|safeguards?|controls?)\b/i.test(
+      normalized
+    )
+  ) {
+    return "summary";
   }
 
   if (/^(who|what of|what about)\b/i.test(normalized) || includesAny(normalized, PEOPLE_TERMS)) {
@@ -153,7 +174,8 @@ function guidanceForIntent(intent: QueryIntent) {
     case "policy_advice":
       return [
         "The user is asking for practical advice based on source evidence.",
-        "Answer with a clear decision posture: allowed, prohibited, required, recommended, or unclear from the documents when those labels fit the source material.",
+        "Answer with a clear decision posture: prohibited, required, recommended, unclear from the documents, or allowed only when the source explicitly permits the action.",
+        "For risky actions involving sensitive, internal, regulated, confidential, customer, financial, or proprietary data, never say allowed unless the evidence explicitly grants permission; say not explicitly allowed or requires approval when that is the safer supported posture.",
         "Start with the direct practical answer in natural language, then explain the document basis.",
         "If the evidence does not directly support a decision, use insufficient_evidence instead of guessing."
       ].join(" ");
@@ -183,7 +205,9 @@ function expandRetrievalQuery(question: string, intent: QueryIntent) {
     procedure: ["procedure process step approval notification record responsibility requirement"],
     people: ["name person role head unit owner approver responsible department"],
     list: ["list names roles units table row responsibilities"],
-    summary: ["summary overview purpose scope policy requirements"],
+    summary: [
+      "summary overview purpose scope policy requirements controls safeguards protection sensitive information data security confidentiality access monitoring encryption leakage"
+    ],
     definition: ["definition means refers to framework objective scope"],
     fact_lookup: []
   };
