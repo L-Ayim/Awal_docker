@@ -14,7 +14,6 @@ export default function HomePage() {
     setActiveSessionId,
     isBootstrapping,
     isSending,
-    isUploading,
     gpuRuntime,
     queuedMessages,
     error,
@@ -24,8 +23,7 @@ export default function HomePage() {
     sendMessage,
     stopSending,
     updateQueuedMessage,
-    deleteQueuedMessage,
-    uploadDocuments
+    deleteQueuedMessage
   } = useSessions();
   const [input, setInput] = useState("");
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
@@ -65,13 +63,11 @@ export default function HomePage() {
             setSidebarTitleDraft(title);
           }}
           onDeleteSession={deleteSession}
-          onUploadDocuments={uploadDocuments}
           onSidebarTitleDraftChange={setSidebarTitleDraft}
           onCommitEdit={(id, title) => {
             updateSessionTitle(id, title);
             setEditingSessionId(null);
           }}
-          isUploading={isUploading}
         />
 
         <section className="chat-shell">
