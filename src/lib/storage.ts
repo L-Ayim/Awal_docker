@@ -3,7 +3,7 @@ import { mkdir, readFile, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import { basename, join } from "path";
 import { pathToFileURL, fileURLToPath } from "url";
-import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 
 function safeSegment(value: string) {
   return value.replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -207,6 +207,29 @@ export async function readStoredBytes(storageUri: string | null) {
   }
 
   throw new Error("Unsupported storage URI.");
+}
+
+export async function deleteStoredObject(storageUri: string | null) {
+  if (!storageUri) {
+    return;
+  }
+
+  if (storageUri.startsWith("file://")) {
+    await rm(fileURLToPath(storageUri), { force: true }).catch(() => undefined);
+    return;
+  }
+
+  if (storageUri.startsWith("s3://")) {
+    const { client } = getObjectStorageClient();
+    const { bucket, key } = parseBucketAndKey(storageUri);
+
+    await client.send(
+      new DeleteObjectCommand({
+        Bucket: bucket,
+        Key: key
+      })
+    );
+  }
 }
 
 export async function materializeStoredFile(params: {

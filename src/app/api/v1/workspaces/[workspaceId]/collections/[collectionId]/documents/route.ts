@@ -103,3 +103,79 @@ export async function POST(request: Request, context: RouteContext) {
     return serverError("Failed to create document.");
   }
 }
+
+export async function GET(_: Request, context: RouteContext) {
+  try {
+    const { getPrisma } = await import("@/lib/prisma");
+    const prisma = getPrisma();
+    const { workspaceId, collectionId } = await context.params;
+    const collection = await prisma.collection.findFirst({
+      where: {
+        id: collectionId,
+        workspaceId
+      },
+      select: {
+        id: true
+      }
+    });
+
+    if (!collection) {
+      return notFound("Collection not found for the given workspace.");
+    }
+
+    const documents = await prisma.document.findMany({
+      where: {
+        workspaceId,
+        collectionId,
+        status: {
+          not: "archived"
+        }
+      },
+      orderBy: {
+        updatedAt: "desc"
+      },
+      include: {
+        latestRevision: {
+          include: {
+            ingestionJobs: {
+              orderBy: {
+                createdAt: "desc"
+              },
+              take: 1
+            },
+            _count: {
+              select: {
+                chunks: true,
+                indexCards: true
+              }
+            }
+          }
+        }
+      }
+    });
+
+    return ok({
+      documents: documents.map((document) => ({
+        id: document.id,
+        title: document.title,
+        sourceKind: document.sourceKind,
+        mimeType: document.mimeType,
+        status: document.status,
+        createdAt: document.createdAt,
+        updatedAt: document.updatedAt,
+        latestRevision: document.latestRevision
+          ? {
+              ...serializeRevision(document.latestRevision),
+              chunkCount: document.latestRevision._count.chunks,
+              indexCardCount: document.latestRevision._count.indexCards
+            }
+          : null,
+        latestJob: document.latestRevision?.ingestionJobs[0]
+          ? serializeIngestionJob(document.latestRevision.ingestionJobs[0])
+          : null
+      }))
+    });
+  } catch {
+    return serverError("Failed to list documents.");
+  }
+}
