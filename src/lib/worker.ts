@@ -157,7 +157,10 @@ export async function processQueuedIngestionJob() {
 
     if (aiConfig.hasEmbeddingProvider && chunkEntries.length > 0) {
       try {
-        embeddingPayload = await generateEmbeddings(chunkEntries.map((chunk) => chunk.text));
+        embeddingPayload = await generateEmbeddings(
+          chunkEntries.map((chunk) => chunk.text),
+          { runtimeKind: "ingest" }
+        );
       } catch (error) {
         embeddingFailureReason =
           error instanceof Error ? error.message : "embedding_provider_failed";
@@ -349,7 +352,8 @@ export async function processQueuedIngestionJob() {
               tags: card.tags,
               aliases: card.aliases
             })
-          )
+          ),
+          { runtimeKind: "ingest" }
         );
       } catch (error) {
         indexCardEmbeddingFailureReason =

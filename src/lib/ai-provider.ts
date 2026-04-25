@@ -126,17 +126,21 @@ export function getAiRuntimeConfig() {
   };
 }
 
-async function getResolvedAiRuntimeConfig() {
+async function getResolvedAiRuntimeConfig(params: { embeddingRuntime?: "chat" | "ingest" } = {}) {
   const config = getAiRuntimeConfig();
   const runtime = await resolveGpuRuntimeEndpoints();
+  const embeddingRuntime =
+    params.embeddingRuntime === "ingest"
+      ? await resolveGpuRuntimeEndpoints({ kind: "ingest" })
+      : runtime;
 
   return {
     ...config,
     hasGenerationProvider: Boolean(runtime.llmBaseUrl) || config.hasGenerationProvider,
-    hasEmbeddingProvider: Boolean(runtime.embeddingBaseUrl) || config.hasEmbeddingProvider,
+    hasEmbeddingProvider: Boolean(embeddingRuntime.embeddingBaseUrl) || config.hasEmbeddingProvider,
     hasRerankProvider: Boolean(runtime.rerankBaseUrl) || config.hasRerankProvider,
     generationBaseUrl: runtime.llmBaseUrl || config.generationBaseUrl,
-    embeddingBaseUrl: runtime.embeddingBaseUrl || config.embeddingBaseUrl,
+    embeddingBaseUrl: embeddingRuntime.embeddingBaseUrl || config.embeddingBaseUrl,
     rerankBaseUrl: runtime.rerankBaseUrl || config.rerankBaseUrl
   };
 }
@@ -567,8 +571,20 @@ async function requestStructuredChatCompletion(params: {
   });
 }
 
-export async function generateEmbeddings(inputs: string[]) {
-  const config = await getResolvedAiRuntimeConfig();
+export async function generateEmbeddings(
+  inputs: string[],
+  params: { runtimeKind?: "chat" | "ingest" } = {}
+) {
+  const baseConfig = getAiRuntimeConfig();
+  const runtime =
+    params.runtimeKind === "ingest"
+      ? await resolveGpuRuntimeEndpoints({ kind: "ingest" })
+      : await resolveGpuRuntimeEndpoints({ wakeOnDemand: false });
+  const config = {
+    ...baseConfig,
+    hasEmbeddingProvider: Boolean(runtime.embeddingBaseUrl) || baseConfig.hasEmbeddingProvider,
+    embeddingBaseUrl: runtime.embeddingBaseUrl || baseConfig.embeddingBaseUrl
+  };
 
   if (!config.hasEmbeddingProvider || !config.embeddingBaseUrl) {
     throw new Error("Embedding provider is not configured.");

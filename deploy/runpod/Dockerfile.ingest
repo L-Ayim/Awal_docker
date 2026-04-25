@@ -1,0 +1,35 @@
+FROM runpod/pytorch:2.8.0-py3.11-cuda12.8.1-cudnn-devel-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV HF_HOME=/workspace/.cache/huggingface
+ENV AWAL_LOG_DIR=/workspace/logs
+ENV AWAL_INGEST_VENV_DIR=/opt/awal-ingest-venv
+ENV RUNPOD_RUNTIME_MODE=ingest
+ENV RUNPOD_KEEPALIVE=1
+ENV DOCLING_DEVICE=cuda
+ENV EMBEDDING_MODEL=BAAI/bge-m3
+
+WORKDIR /opt/awal
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates curl git procps rsync \
+  && rm -rf /var/lib/apt/lists/*
+
+COPY requirements-docling-service.txt requirements-docling-service.txt
+COPY requirements-embedding-service.txt requirements-embedding-service.txt
+COPY requirements-rerank-service.txt requirements-rerank-service.txt
+
+RUN python -m venv /opt/awal-ingest-venv \
+  && /opt/awal-ingest-venv/bin/python -m pip install --upgrade pip \
+  && /opt/awal-ingest-venv/bin/python -m pip install \
+    -r requirements-docling-service.txt \
+    -r requirements-embedding-service.txt \
+    -r requirements-rerank-service.txt
+
+COPY . /opt/awal
+
+RUN chmod +x /opt/awal/deploy/runpod/ingest/start-ingest.sh
+
+EXPOSE 8010 8020 8030
+
+CMD ["bash", "/opt/awal/deploy/runpod/ingest/start-ingest.sh"]

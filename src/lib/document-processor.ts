@@ -53,7 +53,7 @@ async function resolveRemoteProcessorConfig() {
     return config;
   }
 
-  const runtime = await resolveGpuRuntimeEndpoints();
+  const runtime = await resolveGpuRuntimeEndpoints({ kind: "ingest" });
 
   return {
     ...config,

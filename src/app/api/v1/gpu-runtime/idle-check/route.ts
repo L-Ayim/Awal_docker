@@ -10,7 +10,8 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await sleepGpuRuntimeIfIdle();
+    const kind = new URL(request.url).searchParams.get("kind") === "ingest" ? "ingest" : "chat";
+    const result = await sleepGpuRuntimeIfIdle({ kind });
 
     return NextResponse.json({
       ok: true,

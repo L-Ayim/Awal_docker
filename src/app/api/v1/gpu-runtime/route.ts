@@ -8,12 +8,17 @@ import {
 export async function GET() {
   try {
     const runtime = await getGpuRuntimeState();
+    const ingestRuntime = await getGpuRuntimeState("ingest");
 
     return NextResponse.json({
       ok: true,
       automationEnabled: isGpuRuntimeAutomationEnabled(),
       staticEndpoints: getGpuRuntimeStaticEndpoints(),
-      runtime
+      runtime,
+      runtimes: {
+        chat: runtime,
+        ingest: ingestRuntime
+      }
     });
   } catch (error) {
     return NextResponse.json(

@@ -10,8 +10,10 @@ export async function POST(request: Request) {
   }
 
   try {
-    const wait = new URL(request.url).searchParams.get("wait") === "1";
-    const runtime = await wakeGpuRuntime({ waitForHealth: wait });
+    const searchParams = new URL(request.url).searchParams;
+    const wait = searchParams.get("wait") === "1";
+    const kind = searchParams.get("kind") === "ingest" ? "ingest" : "chat";
+    const runtime = await wakeGpuRuntime({ waitForHealth: wait, kind });
 
     return NextResponse.json({
       ok: true,
