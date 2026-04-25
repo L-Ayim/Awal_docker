@@ -53,7 +53,7 @@ export function ChatInput({
           <div className="composer-queue-header">
             <div>
               <span>Queued messages</span>
-              <p>Review, steer, or delete each message before Awal sends it.</p>
+              <p>Review, edit, or delete each message before Awal sends it.</p>
             </div>
             <span>{queuedCount}</span>
           </div>
@@ -63,7 +63,6 @@ export function ChatInput({
               <label className="composer-queue-editor">
                 <span>
                   {index === 0 ? "Next up" : `Queued ${index + 1}`}
-                  <strong>Steer</strong>
                 </span>
                 <textarea
                   value={message.content}
