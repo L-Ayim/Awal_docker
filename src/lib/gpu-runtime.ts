@@ -545,11 +545,16 @@ export async function getGpuRuntimeState(kind: GpuRuntimeKind = "chat") {
 
 async function markPodReady(pod: RunPodPod, profile: RuntimeProfile) {
   const endpoints = buildEndpointsFromPod(pod);
-  const ready = isEndpointShapeReady(endpoints, profile);
+  const hasEndpointShape = isEndpointShapeReady(endpoints, profile);
+  const healthy = hasEndpointShape && (await checkRuntimeHealth(endpoints, profile));
+  const missingMessage =
+    profile.mode === "vllm"
+      ? "RunPod chat pod has a public HTTP port, but vLLM is not serving /v1/models yet."
+      : `RunPod ${profile.kind} pod has no healthy public service endpoint yet.`;
 
   return updateRuntime(
     {
-      status: ready ? "ready" : "waking",
+      status: healthy ? "ready" : "waking",
       podId: pod.id,
       podName: pod.name || null,
       publicIp: endpoints.publicIp,
@@ -559,7 +564,11 @@ async function markPodReady(pod: RunPodPod, profile: RuntimeProfile) {
       rerankBaseUrl: endpoints.rerankBaseUrl,
       portMappingsJson: pod.portMappings || {},
       lastHealthAt: new Date(),
-      lastError: ready ? null : `RunPod ${profile.kind} pod has no public service port mapping yet.`
+      lastError: healthy
+        ? null
+        : hasEndpointShape
+          ? missingMessage
+          : `RunPod ${profile.kind} pod has no public service port mapping yet.`
     },
     profile.kind
   );
