@@ -168,18 +168,30 @@ Best production improvement is still a custom RunPod template/image with OS pack
 The repo includes [Dockerfile.runtime](../deploy/runpod/Dockerfile.runtime) for that production image. The GitHub Actions workflow `.github/workflows/runpod-runtime-image.yml` builds and pushes:
 
 ```text
-ghcr.io/l-ayim/awal-runpod-runtime:latest
+ghcr.io/l-ayim/awal-runpod-runtime:latest  # full: vLLM + Docling + embeddings
+ghcr.io/l-ayim/awal-runpod-vllm:latest     # chat: vLLM only
 ```
 
-After the first workflow run, make the GHCR package public or configure RunPod registry credentials. Then set:
+For normal chat serving, prefer the vLLM-only image:
+
+```powershell
+flyctl secrets set `
+  RUNPOD_IMAGE="ghcr.io/l-ayim/awal-runpod-vllm:latest" `
+  RUNPOD_RUNTIME_MODE="vllm" `
+  RUNPOD_PORTS="8000/http,22/tcp"
+```
+
+After the first workflow run, make the GHCR package public or configure RunPod registry credentials. When a custom image is used, the controller copies baked-in code from `/opt/awal` into `/workspace/Awal` before starting services.
+
+For ingestion-heavy work, use the full runtime image or a separate ingestion runtime that wakes only for uploads and reprocessing:
 
 ```powershell
 flyctl secrets set `
   RUNPOD_IMAGE="ghcr.io/l-ayim/awal-runpod-runtime:latest" `
-  AWAL_VENV_DIR="/opt/awal-venv"
+  RUNPOD_RUNTIME_MODE="full" `
+  AWAL_VENV_DIR="/opt/awal-venv" `
+  RUNPOD_PORTS="8000/http,8010/http,8020/http,8030/http,22/tcp"
 ```
-
-When the custom image is used, the controller copies baked-in code from `/opt/awal` into `/workspace/Awal` before starting services, and the bootstrap uses the baked `/opt/awal-venv` dependencies.
 
 ## Production Safeguards
 

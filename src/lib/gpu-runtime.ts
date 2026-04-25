@@ -57,6 +57,11 @@ function getRunPodApiKey() {
   return process.env.RUNPOD_API_KEY?.trim() || "";
 }
 
+function getRunPodRuntimeMode() {
+  const mode = process.env.RUNPOD_RUNTIME_MODE?.trim().toLowerCase();
+  return mode === "full" ? "full" : "vllm";
+}
+
 export function isGpuRuntimeAutomationEnabled() {
   return process.env.RUNPOD_AUTOMATION_ENABLED === "1" && Boolean(getRunPodApiKey());
 }
@@ -264,6 +269,7 @@ function buildDockerArgs() {
 function buildCreatePodPayload() {
   const dataCenterId = process.env.RUNPOD_DATA_CENTER_ID?.trim();
   const networkVolumeId = process.env.RUNPOD_NETWORK_VOLUME_ID?.trim();
+  const runtimeMode = getRunPodRuntimeMode();
 
   if (!dataCenterId) {
     throw new Error("Missing RUNPOD_DATA_CENTER_ID.");
@@ -294,7 +300,10 @@ function buildCreatePodPayload() {
     containerDiskInGb: optionalNumberEnv("RUNPOD_CONTAINER_DISK_GB", 50),
     networkVolumeId,
     volumeMountPath: "/workspace",
-    ports: (process.env.RUNPOD_PORTS || "8000/http,8010/http,8020/http,8030/http,22/tcp")
+    ports: (process.env.RUNPOD_PORTS ||
+      (runtimeMode === "vllm"
+        ? "8000/http,22/tcp"
+        : "8000/http,8010/http,8020/http,8030/http,22/tcp"))
       .split(",")
       .map((value) => value.trim())
       .filter(Boolean),
@@ -308,6 +317,7 @@ function buildCreatePodPayload() {
         process.env.DOC_PROCESSOR_API_KEY || "awal-docling-key",
       EMBEDDING_API_KEY: process.env.EMBEDDING_API_KEY || "awal-embedding-key",
       ENABLE_RERANK: process.env.ENABLE_RERANK || "0",
+      RUNPOD_RUNTIME_MODE: runtimeMode,
       RUNPOD_FAST_START: process.env.RUNPOD_FAST_START || "1",
       RUNPOD_FORCE_INSTALL: process.env.RUNPOD_FORCE_INSTALL || "0",
       RUNPOD_KEEPALIVE: process.env.RUNPOD_KEEPALIVE || "1",
@@ -422,9 +432,13 @@ export async function getGpuRuntimeState() {
 
 async function markPodReady(pod: RunPodPod) {
   const endpoints = buildEndpointsFromPod(pod);
+  const runtimeMode = getRunPodRuntimeMode();
 
   return updateRuntime({
-    status: endpoints.llmBaseUrl && endpoints.embeddingBaseUrl ? "ready" : "waking",
+    status:
+      endpoints.llmBaseUrl && (runtimeMode === "vllm" || endpoints.embeddingBaseUrl)
+        ? "ready"
+        : "waking",
     podId: pod.id,
     podName: pod.name || null,
     publicIp: endpoints.publicIp,
@@ -591,7 +605,11 @@ export async function resolveGpuRuntimeEndpoints(params: { wakeOnDemand?: boolea
     lastRequestAt: new Date()
   });
 
-  if (runtime.status === "ready" && runtime.llmBaseUrl && runtime.embeddingBaseUrl) {
+    if (
+      runtime.status === "ready" &&
+      runtime.llmBaseUrl &&
+      (getRunPodRuntimeMode() === "vllm" || runtime.embeddingBaseUrl)
+    ) {
     if (await checkLlmHealth(runtime.llmBaseUrl)) {
       await updateRuntime({
         lastHealthAt: new Date(),
@@ -615,7 +633,7 @@ export async function resolveGpuRuntimeEndpoints(params: { wakeOnDemand?: boolea
     if (
       refreshed.status === "ready" &&
       refreshed.llmBaseUrl &&
-      refreshed.embeddingBaseUrl &&
+      (getRunPodRuntimeMode() === "vllm" || refreshed.embeddingBaseUrl) &&
       (await checkLlmHealth(refreshed.llmBaseUrl))
     ) {
       return {

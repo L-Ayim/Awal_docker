@@ -1,0 +1,22 @@
+FROM vllm/vllm-openai:latest
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV HF_HOME=/workspace/.cache/huggingface
+ENV AWAL_VOLUME_DIR=/workspace
+ENV AWAL_LOG_DIR=/workspace/logs
+ENV RUNPOD_RUNTIME_MODE=vllm
+ENV RUNPOD_KEEPALIVE=1
+
+WORKDIR /opt/awal
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates git procps rsync \
+  && rm -rf /var/lib/apt/lists/*
+
+COPY . /opt/awal
+
+RUN chmod +x /opt/awal/deploy/runpod/vllm/run-qwen3.sh
+
+EXPOSE 8000
+
+CMD ["bash", "-lc", "mkdir -p /workspace/Awal /workspace/logs /workspace/.cache/huggingface && rsync -a --delete --exclude .git /opt/awal/ /workspace/Awal/ && cd /workspace/Awal && API_KEY=\"${VLLM_API_KEY:-awal-runpod-key}\" HF_HOME=\"${HF_HOME:-/workspace/.cache/huggingface}\" bash /workspace/Awal/deploy/runpod/vllm/run-qwen3.sh \"${QWEN_PROFILE:-32b}\" 2>&1 | tee /workspace/logs/vllm.log"]
