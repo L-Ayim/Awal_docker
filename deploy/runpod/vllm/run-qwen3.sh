@@ -31,7 +31,7 @@ API_KEY="${API_KEY:-awal-runpod-key}"
 PORT="${PORT:-8000}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-$DEFAULT_MAX_MODEL_LEN}"
 GPU_MEMORY_UTILIZATION="${GPU_MEMORY_UTILIZATION:-$DEFAULT_GPU_MEMORY_UTILIZATION}"
-HF_HOME="${HF_HOME:-/workspace/hf-cache}"
+HF_HOME="${HF_HOME:-/workspace/.cache/huggingface}"
 
 mkdir -p "$HF_HOME" /workspace/models /workspace/logs /workspace/outputs /workspace/checkpoints
 

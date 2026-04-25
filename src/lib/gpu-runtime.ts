@@ -2,6 +2,7 @@ import type { Prisma } from "@prisma/client";
 import { getPrisma } from "@/lib/prisma";
 
 const RUNPOD_REST_BASE_URL = process.env.RUNPOD_REST_BASE_URL || "https://rest.runpod.io/v1";
+const RUNPOD_GRAPHQL_URL = process.env.RUNPOD_GRAPHQL_URL || "https://api.runpod.io/graphql";
 const DEFAULT_RUNTIME_ID = "default";
 
 type RuntimeEndpoints = {
@@ -21,6 +22,15 @@ type RunPodPod = {
     id?: string | null;
     displayName?: string | null;
   } | null;
+};
+
+type RunPodGraphqlPod = {
+  id: string;
+  name?: string | null;
+  desiredStatus?: string | null;
+  imageName?: string | null;
+  machineId?: string | null;
+  networkVolumeId?: string | null;
 };
 
 function trimTrailingSlash(value: string) {
@@ -97,6 +107,36 @@ async function runpodFetch<TResponse>(path: string, options: RequestInit = {}) {
   return (text ? JSON.parse(text) : null) as TResponse;
 }
 
+async function runpodGraphqlFetch<TResponse>(query: string, variables: Record<string, unknown>) {
+  const apiKey = getRunPodApiKey();
+
+  if (!apiKey) {
+    throw new Error("Missing RUNPOD_API_KEY.");
+  }
+
+  const response = await fetch(`${RUNPOD_GRAPHQL_URL}?api_key=${encodeURIComponent(apiKey)}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      query,
+      variables
+    })
+  });
+
+  const text = await response.text();
+  const json = text ? JSON.parse(text) : null;
+
+  if (!response.ok || json?.errors?.length) {
+    throw new Error(
+      `RunPod GraphQL ${response.status}: ${JSON.stringify(json?.errors || json || text)}`
+    );
+  }
+
+  return json.data as TResponse;
+}
+
 async function listPods() {
   return runpodFetch<RunPodPod[]>("/pods");
 }
@@ -121,6 +161,28 @@ function mappedPort(pod: RunPodPod, port: number) {
   return mappings[String(port)] || mappings[port];
 }
 
+function hasHttpPort(pod: RunPodPod, port: number) {
+  const ports = Array.isArray((pod as { ports?: unknown }).ports)
+    ? ((pod as { ports?: string[] }).ports || [])
+    : [];
+
+  return ports.includes(`${port}/http`);
+}
+
+function buildHttpServiceBaseUrl(pod: RunPodPod, port: number) {
+  const mapped = mappedPort(pod, port);
+
+  if (pod.publicIp && mapped) {
+    return `http://${pod.publicIp}:${mapped}`;
+  }
+
+  if (hasHttpPort(pod, port)) {
+    return `https://${pod.id}-${port}.proxy.runpod.net`;
+  }
+
+  return null;
+}
+
 function buildEndpointsFromPod(pod: RunPodPod): RuntimeEndpoints & { publicIp: string | null } {
   const publicIp = pod.publicIp || null;
 
@@ -134,18 +196,40 @@ function buildEndpointsFromPod(pod: RunPodPod): RuntimeEndpoints & { publicIp: s
     };
   }
 
-  const llmPort = mappedPort(pod, 8000);
-  const doclingPort = mappedPort(pod, 8010);
-  const embeddingPort = mappedPort(pod, 8020);
-  const rerankPort = mappedPort(pod, 8030);
+  const llmBaseUrl = buildHttpServiceBaseUrl(pod, 8000);
+  const doclingBaseUrl = buildHttpServiceBaseUrl(pod, 8010);
+  const embeddingBaseUrl = buildHttpServiceBaseUrl(pod, 8020);
+  const rerankBaseUrl = buildHttpServiceBaseUrl(pod, 8030);
 
   return {
     publicIp,
-    llmBaseUrl: llmPort ? `http://${publicIp}:${llmPort}/v1` : null,
-    doclingBaseUrl: doclingPort ? `http://${publicIp}:${doclingPort}` : null,
-    embeddingBaseUrl: embeddingPort ? `http://${publicIp}:${embeddingPort}` : null,
-    rerankBaseUrl: rerankPort ? `http://${publicIp}:${rerankPort}` : null
+    llmBaseUrl: llmBaseUrl ? `${llmBaseUrl}/v1` : null,
+    doclingBaseUrl,
+    embeddingBaseUrl,
+    rerankBaseUrl
   };
+}
+
+async function checkLlmHealth(baseUrl: string) {
+  const apiKey = process.env.VLLM_API_KEY || process.env.VAST_OPENAI_API_KEY || "awal-runpod-key";
+  const timeoutMs = optionalNumberEnv("RUNPOD_QUICK_HEALTH_TIMEOUT_MS", 5000);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(`${baseUrl}/models`, {
+      headers: {
+        Authorization: `Bearer ${apiKey}`
+      },
+      signal: controller.signal
+    });
+
+    return response.ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 function buildDockerStartCmd() {
@@ -158,10 +242,23 @@ function buildDockerStartCmd() {
     [
       "set -euo pipefail",
       "mkdir -p /workspace",
-      `if [ -d /workspace/Awal/.git ]; then git -C /workspace/Awal pull --ff-only; else rm -rf /workspace/Awal && git clone "${repoUrl.replace(/"/g, '\\"')}" /workspace/Awal; fi`,
+      `if [ -d /opt/awal/deploy/runpod ]; then rm -rf /workspace/Awal && cp -a /opt/awal /workspace/Awal; elif [ -d /workspace/Awal/.git ]; then git -C /workspace/Awal pull --ff-only; else rm -rf /workspace/Awal && git clone "${repoUrl.replace(/"/g, '\\"')}" /workspace/Awal; fi`,
       `bash /workspace/Awal/deploy/runpod/bootstrap-runpod.sh "${profile.replace(/"/g, '\\"')}"`
     ].join(" && ")
   ];
+}
+
+function buildDockerArgs() {
+  const repoUrl = process.env.REPO_URL || "https://github.com/L-Ayim/Awal_docker.git";
+  const profile = process.env.QWEN_PROFILE || "32b";
+  const script = [
+    "set -euo pipefail",
+    "mkdir -p /workspace",
+    `if [ -d /opt/awal/deploy/runpod ]; then rm -rf /workspace/Awal && cp -a /opt/awal /workspace/Awal; elif [ -d /workspace/Awal/.git ]; then git -C /workspace/Awal pull --ff-only; else rm -rf /workspace/Awal && git clone "${repoUrl.replace(/"/g, '\\"')}" /workspace/Awal; fi`,
+    `bash /workspace/Awal/deploy/runpod/bootstrap-runpod.sh "${profile.replace(/"/g, '\\"')}"`
+  ].join(" && ");
+
+  return `bash -lc ${JSON.stringify(script)}`;
 }
 
 function buildCreatePodPayload() {
@@ -211,11 +308,85 @@ function buildCreatePodPayload() {
         process.env.DOC_PROCESSOR_API_KEY || "awal-docling-key",
       EMBEDDING_API_KEY: process.env.EMBEDDING_API_KEY || "awal-embedding-key",
       ENABLE_RERANK: process.env.ENABLE_RERANK || "0",
+      RUNPOD_FAST_START: process.env.RUNPOD_FAST_START || "1",
+      RUNPOD_FORCE_INSTALL: process.env.RUNPOD_FORCE_INSTALL || "0",
+      RUNPOD_KEEPALIVE: process.env.RUNPOD_KEEPALIVE || "1",
+      AWAL_VENV_DIR: process.env.AWAL_VENV_DIR || "/workspace/venvs/awal-runtime",
+      HF_HOME: process.env.HF_HOME || "/workspace/.cache/huggingface",
       HF_TOKEN: process.env.HF_TOKEN || "",
       REPO_URL: process.env.REPO_URL || "https://github.com/L-Ayim/Awal_docker.git"
     },
     dockerStartCmd: buildDockerStartCmd()
   };
+}
+
+function buildCreatePodGraphqlInput() {
+  const payload = buildCreatePodPayload();
+  const gpuTypeIds = Array.isArray(payload.gpuTypeIds) ? payload.gpuTypeIds : [];
+
+  return {
+    cloudType: payload.cloudType,
+    computeType: payload.computeType,
+    dataCenterId: payload.dataCenterIds[0],
+    gpuTypeId: gpuTypeIds[0],
+    gpuTypeIdList: gpuTypeIds,
+    gpuCount: payload.gpuCount,
+    name: payload.name,
+    imageName: payload.imageName,
+    containerDiskInGb: payload.containerDiskInGb,
+    networkVolumeId: payload.networkVolumeId,
+    volumeMountPath: payload.volumeMountPath,
+    ports: payload.ports.join(","),
+    supportPublicIp: payload.supportPublicIp,
+    startSsh: true,
+    startJupyter: false,
+    dockerArgs: buildDockerArgs(),
+    env: Object.entries(payload.env).map(([key, value]) => ({
+      key,
+      value
+    }))
+  };
+}
+
+async function createRunPodPod() {
+  try {
+    return await runpodFetch<RunPodPod>("/pods", {
+      method: "POST",
+      body: JSON.stringify(buildCreatePodPayload())
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+
+    if (!message.includes("dataCenterIds") && !message.includes("schema requirements")) {
+      throw error;
+    }
+
+    const data = await runpodGraphqlFetch<{
+      podFindAndDeployOnDemand: RunPodGraphqlPod;
+    }>(
+      `mutation CreateAwalPod($input: PodFindAndDeployOnDemandInput) {
+        podFindAndDeployOnDemand(input: $input) {
+          id
+          name
+          desiredStatus
+          imageName
+          machineId
+          networkVolumeId
+        }
+      }`,
+      {
+        input: buildCreatePodGraphqlInput()
+      }
+    );
+
+    return {
+      id: data.podFindAndDeployOnDemand.id,
+      name: data.podFindAndDeployOnDemand.name || null,
+      desiredStatus: data.podFindAndDeployOnDemand.desiredStatus || null,
+      publicIp: null,
+      portMappings: null
+    };
+  }
 }
 
 async function updateRuntime(data: Prisma.GpuRuntimeUncheckedUpdateInput) {
@@ -265,6 +436,28 @@ async function markPodReady(pod: RunPodPod) {
     lastHealthAt: new Date(),
     lastError: endpoints.llmBaseUrl ? null : "RunPod pod has no public vLLM port mapping yet."
   });
+}
+
+async function refreshRuntimeFromRunPod() {
+  const pod = await findActiveAwalPod();
+
+  if (!pod) {
+    return updateRuntime({
+      status: "asleep",
+      podId: null,
+      podName: null,
+      publicIp: null,
+      llmBaseUrl: null,
+      doclingBaseUrl: null,
+      embeddingBaseUrl: null,
+      rerankBaseUrl: null,
+      portMappingsJson: {},
+      lastSleepAt: new Date(),
+      lastError: null
+    });
+  }
+
+  return markPodReady(pod);
 }
 
 async function waitForRuntime(podId: string) {
@@ -323,10 +516,7 @@ export async function wakeGpuRuntime(params: { waitForHealth?: boolean } = {}) {
     return runtime;
   }
 
-  const pod = await runpodFetch<RunPodPod>("/pods", {
-    method: "POST",
-    body: JSON.stringify(buildCreatePodPayload())
-  });
+  const pod = await createRunPodPod();
 
   await updateRuntime({
     status: "waking",
@@ -402,12 +592,43 @@ export async function resolveGpuRuntimeEndpoints(params: { wakeOnDemand?: boolea
   });
 
   if (runtime.status === "ready" && runtime.llmBaseUrl && runtime.embeddingBaseUrl) {
-    return {
-      llmBaseUrl: runtime.llmBaseUrl,
-      doclingBaseUrl: runtime.doclingBaseUrl,
-      embeddingBaseUrl: runtime.embeddingBaseUrl,
-      rerankBaseUrl: runtime.rerankBaseUrl
-    };
+    if (await checkLlmHealth(runtime.llmBaseUrl)) {
+      await updateRuntime({
+        lastHealthAt: new Date(),
+        lastError: null
+      });
+
+      return {
+        llmBaseUrl: runtime.llmBaseUrl,
+        doclingBaseUrl: runtime.doclingBaseUrl,
+        embeddingBaseUrl: runtime.embeddingBaseUrl,
+        rerankBaseUrl: runtime.rerankBaseUrl
+      };
+    }
+
+    await updateRuntime({
+      status: "waking",
+      lastError: "Stored RunPod endpoint is not reachable; refreshing runtime state."
+    });
+    const refreshed = await refreshRuntimeFromRunPod();
+
+    if (
+      refreshed.status === "ready" &&
+      refreshed.llmBaseUrl &&
+      refreshed.embeddingBaseUrl &&
+      (await checkLlmHealth(refreshed.llmBaseUrl))
+    ) {
+      return {
+        llmBaseUrl: refreshed.llmBaseUrl,
+        doclingBaseUrl: refreshed.doclingBaseUrl,
+        embeddingBaseUrl: refreshed.embeddingBaseUrl,
+        rerankBaseUrl: refreshed.rerankBaseUrl
+      };
+    }
+
+    if (params.wakeOnDemand === false) {
+      return staticEndpoints;
+    }
   }
 
   if (params.wakeOnDemand === false) {

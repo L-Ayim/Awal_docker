@@ -11,6 +11,11 @@ type QueuedComposerMessage = {
 type ChatInputProps = {
   input: string;
   isSending: boolean;
+  gpuRuntime: {
+    automationEnabled: boolean;
+    status: "asleep" | "waking" | "ready" | "stopping" | "failed";
+    lastError: string | null;
+  } | null;
   queuedMessages: QueuedComposerMessage[];
   onInputChange: (value: string) => void;
   onSendMessage: () => void;
@@ -22,6 +27,7 @@ type ChatInputProps = {
 export function ChatInput({
   input,
   isSending,
+  gpuRuntime,
   queuedMessages,
   onInputChange,
   onSendMessage,
@@ -32,6 +38,14 @@ export function ChatInput({
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const hasInput = input.trim().length > 0;
   const queuedCount = queuedMessages.length;
+  const runtimeStatus =
+    isSending && gpuRuntime?.automationEnabled
+      ? gpuRuntime.status === "asleep" || gpuRuntime.status === "waking"
+        ? "Model is waking up. The first answer can take several minutes."
+        : gpuRuntime.status === "failed"
+          ? "Model startup needs attention."
+          : null
+      : null;
 
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -68,7 +82,7 @@ export function ChatInput({
                   value={message.content}
                   onChange={(event) => onQueuedMessageChange(message.id, event.target.value)}
                   aria-label={`Edit queued message ${index + 1}`}
-                  placeholder="Steer what Awal should do next..."
+                  placeholder="Edit this queued message..."
                   rows={1}
                 />
               </label>
@@ -123,9 +137,10 @@ export function ChatInput({
       {isSending || queuedCount > 0 ? (
         <div className="composer-status" aria-live="polite">
           {isSending
-            ? hasInput
+            ? runtimeStatus ||
+              (hasInput
               ? "Send to queue the next message."
-              : "Response is in progress."
+                : "Response is in progress.")
             : null}
           {queuedCount > 0
             ? `${isSending ? " " : ""}${queuedCount} queued ${queuedCount === 1 ? "message" : "messages"}.`

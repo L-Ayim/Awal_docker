@@ -93,6 +93,14 @@ type QueuedMessage = {
   content: string;
 };
 
+type GpuRuntimeStatus = "asleep" | "waking" | "ready" | "stopping" | "failed";
+
+type GpuRuntimeSnapshot = {
+  automationEnabled: boolean;
+  status: GpuRuntimeStatus;
+  lastError: string | null;
+} | null;
+
 function mapMessage(message: {
   id: string;
   role: ChatRole;
@@ -191,6 +199,7 @@ export function useSessions() {
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([]);
+  const [gpuRuntime, setGpuRuntime] = useState<GpuRuntimeSnapshot>(null);
   const activeRequestRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -620,6 +629,50 @@ export function useSessions() {
     void sendMessage(next.content, next.sessionId);
   }, [isSending, queuedMessages]);
 
+  useEffect(() => {
+    if (!isSending) {
+      return;
+    }
+
+    let canceled = false;
+
+    async function pollRuntime() {
+      try {
+        const data = await parseJson<{
+          automationEnabled: boolean;
+          runtime: {
+            status: GpuRuntimeStatus;
+            lastError: string | null;
+          };
+        }>(
+          await fetch("/api/v1/gpu-runtime", {
+            cache: "no-store"
+          })
+        );
+
+        if (!canceled) {
+          setGpuRuntime({
+            automationEnabled: data.automationEnabled,
+            status: data.runtime.status,
+            lastError: data.runtime.lastError
+          });
+        }
+      } catch {
+        if (!canceled) {
+          setGpuRuntime(null);
+        }
+      }
+    }
+
+    void pollRuntime();
+    const intervalId = window.setInterval(() => void pollRuntime(), 5000);
+
+    return () => {
+      canceled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [isSending]);
+
   const stopSending = () => {
     activeRequestRef.current?.abort();
   };
@@ -682,6 +735,7 @@ export function useSessions() {
     isSending,
     isUploading,
     queuedMessages,
+    gpuRuntime,
     error,
     createNewSession,
     deleteSession,

@@ -6,6 +6,11 @@ REPO_URL="${REPO_URL:-https://github.com/L-Ayim/Awal_docker.git}"
 WORKDIR="${WORKDIR:-/workspace/Awal}"
 LOG_DIR="${AWAL_LOG_DIR:-/workspace/logs}"
 VOLUME_DIR="${AWAL_VOLUME_DIR:-/workspace}"
+VENV_DIR="${AWAL_VENV_DIR:-/workspace/venvs/awal-runtime}"
+FAST_START="${RUNPOD_FAST_START:-0}"
+FORCE_INSTALL="${RUNPOD_FORCE_INSTALL:-0}"
+DEPS_STAMP="$VOLUME_DIR/.awal-runtime-deps-v2"
+KEEPALIVE="${RUNPOD_KEEPALIVE:-1}"
 
 VLLM_API_KEY="${VLLM_API_KEY:-awal-runpod-key}"
 DOC_PROCESSOR_API_KEY="${DOC_PROCESSOR_API_KEY:-awal-docling-key}"
@@ -15,13 +20,18 @@ EMBEDDING_MODEL="${EMBEDDING_MODEL:-BAAI/bge-m3}"
 RERANK_MODEL="${RERANK_MODEL:-BAAI/bge-reranker-v2-m3}"
 DOCLING_DEVICE="${DOCLING_DEVICE:-cuda}"
 ENABLE_RERANK="${ENABLE_RERANK:-0}"
-HF_HOME="${HF_HOME:-/workspace/hf-cache}"
+HF_HOME="${HF_HOME:-/workspace/.cache/huggingface}"
 
 log() {
   printf '\n==> %s\n' "$*"
 }
 
 install_os_packages() {
+  if [ "$FAST_START" = "1" ] && command -v git >/dev/null 2>&1 && command -v rclone >/dev/null 2>&1; then
+    log "Skipping OS package install because RUNPOD_FAST_START=1 and required tools exist"
+    return 0
+  fi
+
   if command -v apt-get >/dev/null 2>&1; then
     log "Installing OS packages"
     apt-get update
@@ -42,6 +52,7 @@ prepare_volume() {
     "$VOLUME_DIR/checkpoints" \
     "$VOLUME_DIR/outputs" \
     "$VOLUME_DIR/logs" \
+    "$(dirname "$VENV_DIR")" \
     "$HF_HOME"
 }
 
@@ -58,8 +69,19 @@ prepare_repo() {
 }
 
 install_python_dependencies() {
-  log "Installing Python dependencies"
+  if [ "$FAST_START" = "1" ] && [ "$FORCE_INSTALL" != "1" ] && [ -x "$VENV_DIR/bin/python" ] && { [ -f "$DEPS_STAMP" ] || [ "$VENV_DIR" = "/opt/awal-venv" ]; }; then
+    log "Skipping Python dependency install because prepared runtime exists at $VENV_DIR"
+    # shellcheck disable=SC1091
+    source "$VENV_DIR/bin/activate"
+    return 0
+  fi
+
+  log "Installing Python dependencies into $VENV_DIR"
   cd "$WORKDIR"
+
+  python -m venv "$VENV_DIR"
+  # shellcheck disable=SC1091
+  source "$VENV_DIR/bin/activate"
 
   python -m pip install --upgrade pip
 
@@ -71,6 +93,8 @@ install_python_dependencies() {
     -r requirements-docling-service.txt \
     -r requirements-embedding-service.txt \
     -r requirements-rerank-service.txt
+
+  date -u +"%Y-%m-%dT%H:%M:%SZ" > "$DEPS_STAMP"
 }
 
 start_service() {
@@ -86,26 +110,28 @@ start_service() {
 
 start_services() {
   cd "$WORKDIR"
+  # shellcheck disable=SC1091
+  source "$VENV_DIR/bin/activate"
 
   start_service "docling" "scripts.docling_service" \
     env DOC_PROCESSOR_API_KEY="$DOC_PROCESSOR_API_KEY" DOCLING_DEVICE="$DOCLING_DEVICE" \
-    python -m uvicorn scripts.docling_service:app --host 0.0.0.0 --port 8010 --app-dir "$WORKDIR"
+    "$VENV_DIR/bin/python" -m uvicorn scripts.docling_service:app --host 0.0.0.0 --port 8010 --app-dir "$WORKDIR"
 
   start_service "embedding" "scripts.embedding_service" \
     env EMBEDDING_API_KEY="$EMBEDDING_API_KEY" EMBEDDING_MODEL="$EMBEDDING_MODEL" \
-    python -m uvicorn scripts.embedding_service:app --host 0.0.0.0 --port 8020 --app-dir "$WORKDIR"
+    "$VENV_DIR/bin/python" -m uvicorn scripts.embedding_service:app --host 0.0.0.0 --port 8020 --app-dir "$WORKDIR"
 
   if [ "$ENABLE_RERANK" = "1" ]; then
     start_service "rerank" "scripts.rerank_service" \
       env RERANK_API_KEY="$RERANK_API_KEY" RERANK_MODEL="$RERANK_MODEL" \
-      python -m uvicorn scripts.rerank_service:app --host 0.0.0.0 --port 8030 --app-dir "$WORKDIR"
+      "$VENV_DIR/bin/python" -m uvicorn scripts.rerank_service:app --host 0.0.0.0 --port 8030 --app-dir "$WORKDIR"
   else
     log "Skipping rerank because ENABLE_RERANK is not 1"
     pkill -f "scripts.rerank_service" >/dev/null 2>&1 || true
   fi
 
   start_service "vllm" "vllm serve" \
-    env API_KEY="$VLLM_API_KEY" HF_HOME="$HF_HOME" \
+    env API_KEY="$VLLM_API_KEY" HF_HOME="$HF_HOME" PATH="$VENV_DIR/bin:$PATH" \
     bash "$WORKDIR/deploy/runpod/vllm/run-qwen3.sh" "$PROFILE"
 }
 
@@ -167,6 +193,16 @@ Logs:
 EOF
 }
 
+keep_container_alive() {
+  if [ "$KEEPALIVE" != "1" ]; then
+    return 0
+  fi
+
+  log "Keeping RunPod container alive"
+  touch "$LOG_DIR/vllm.log" "$LOG_DIR/docling.log" "$LOG_DIR/embedding.log"
+  tail -n 80 -F "$LOG_DIR/vllm.log" "$LOG_DIR/docling.log" "$LOG_DIR/embedding.log"
+}
+
 install_os_packages
 prepare_volume
 prepare_repo
@@ -180,3 +216,4 @@ if [ "$ENABLE_RERANK" = "1" ]; then
 fi
 wait_for_http "vLLM" "http://127.0.0.1:8000/v1/models" "Authorization: Bearer $VLLM_API_KEY" 240 || true
 print_status
+keep_container_alive

@@ -15,6 +15,7 @@ export default function HomePage() {
     isBootstrapping,
     isSending,
     isUploading,
+    gpuRuntime,
     queuedMessages,
     error,
     createNewSession,
@@ -88,6 +89,7 @@ export default function HomePage() {
           <ChatInput
             input={input}
             isSending={isSending}
+            gpuRuntime={gpuRuntime}
             queuedMessages={activeQueuedMessages}
             onInputChange={setInput}
             onSendMessage={handleSendMessage}

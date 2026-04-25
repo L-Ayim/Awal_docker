@@ -1,5 +1,6 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
+import { isGpuRuntimeAutomationEnabled, resolveGpuRuntimeEndpoints } from "@/lib/gpu-runtime";
 import { materializeStoredFile } from "@/lib/storage";
 
 const execFileAsync = promisify(execFile);
@@ -42,6 +43,22 @@ function getRemoteProcessorConfig() {
     apiKey,
     timeoutMs: Number.isFinite(timeoutMs) ? timeoutMs : 600000,
     configured: baseUrl.length > 0
+  };
+}
+
+async function resolveRemoteProcessorConfig() {
+  const config = getRemoteProcessorConfig();
+
+  if (!isGpuRuntimeAutomationEnabled()) {
+    return config;
+  }
+
+  const runtime = await resolveGpuRuntimeEndpoints();
+
+  return {
+    ...config,
+    baseUrl: runtime.doclingBaseUrl || config.baseUrl,
+    configured: Boolean(runtime.doclingBaseUrl) || config.configured
   };
 }
 
@@ -119,7 +136,7 @@ export async function extractWithRemoteDocling(params: {
   title: string;
   mimeType: string;
 }) {
-  const config = getRemoteProcessorConfig();
+  const config = await resolveRemoteProcessorConfig();
 
   if (!config.configured) {
     throw new Error("Remote document processor is not configured.");
