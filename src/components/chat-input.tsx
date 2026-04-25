@@ -52,8 +52,8 @@ export function ChatInput({
         <div className="composer-queue" aria-live="polite">
           <div className="composer-queue-header">
             <div>
-              <span>Queued steering</span>
-              <p>Edit a queued prompt before it runs, or delete it from the queue.</p>
+              <span>Queued messages</span>
+              <p>Review, steer, or delete each message before Awal sends it.</p>
             </div>
             <span>{queuedCount}</span>
           </div>
@@ -62,8 +62,8 @@ export function ChatInput({
               <span className="composer-queue-number">{index + 1}</span>
               <label className="composer-queue-editor">
                 <span>
-                  {index === 0 ? "Next message" : `Queued message ${index + 1}`}
-                  <strong>Waiting</strong>
+                  {index === 0 ? "Next up" : `Queued ${index + 1}`}
+                  <strong>Steer</strong>
                 </span>
                 <textarea
                   value={message.content}

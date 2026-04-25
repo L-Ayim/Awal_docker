@@ -87,17 +87,17 @@ function renderMessageContent(content: string) {
 
 function CitationItems({
   citations,
-  activeCitationOrder,
+  openCitationOrders,
   onToggleCitation
 }: {
   citations: ChatCitation[];
-  activeCitationOrder: number | null;
+  openCitationOrders: number[];
   onToggleCitation: (order: number) => void;
 }) {
   return (
     <div className="chat-inline-citations">
       {citations.map((citation) => {
-        const active = citation.citationOrder === activeCitationOrder;
+        const active = openCitationOrders.includes(citation.citationOrder);
 
         return (
           <div
@@ -171,7 +171,7 @@ function MessageBubble({
       message.content
     );
   const citations = isCasualAssistantReply ? [] : message.answerRecord?.citations ?? [];
-  const [activeCitationOrder, setActiveCitationOrder] = useState<number | null>(null);
+  const [openCitationOrders, setOpenCitationOrders] = useState<number[]>([]);
   const [referencesOpen, setReferencesOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -182,17 +182,17 @@ function MessageBubble({
 
   useEffect(() => {
     if (citations.length === 0) {
-      setActiveCitationOrder(null);
+      setOpenCitationOrders([]);
       return;
     }
 
-    if (
-      activeCitationOrder !== null &&
-      !citations.some((citation) => citation.citationOrder === activeCitationOrder)
-    ) {
-      setActiveCitationOrder(null);
-    }
-  }, [activeCitationOrder, citations]);
+    const availableCitationOrders = new Set(citations.map((citation) => citation.citationOrder));
+
+    setOpenCitationOrders((current) => {
+      const next = current.filter((order) => availableCitationOrders.has(order));
+      return next.length === current.length ? current : next;
+    });
+  }, [citations]);
 
   useEffect(() => {
     if (!isEditing) {
@@ -302,9 +302,13 @@ function MessageBubble({
           {referencesOpen ? (
             <CitationItems
               citations={citations}
-              activeCitationOrder={activeCitationOrder}
+              openCitationOrders={openCitationOrders}
               onToggleCitation={(order) =>
-                setActiveCitationOrder((current) => (current === order ? null : order))
+                setOpenCitationOrders((current) =>
+                  current.includes(order)
+                    ? current.filter((currentOrder) => currentOrder !== order)
+                    : [...current, order]
+                )
               }
             />
           ) : null}

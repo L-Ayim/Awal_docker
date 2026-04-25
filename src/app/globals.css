@@ -930,6 +930,7 @@ h1 {
 
 .chat-composer {
   display: block;
+  position: relative;
   padding: 16px 20px 20px;
   border-top: 1px solid var(--border);
   background:
@@ -939,14 +940,17 @@ h1 {
 
 .composer-queue {
   display: grid;
-  gap: 8px;
-  margin-bottom: 12px;
-  padding: 10px;
-  border: 1px solid rgba(16, 82, 224, 0.12);
-  border-radius: 22px;
+  gap: 10px;
+  width: min(100%, 900px);
+  margin: 0 auto 12px;
+  padding: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-radius: 20px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(236, 243, 255, 0.72)),
-    radial-gradient(circle at 8% 0%, rgba(16, 82, 224, 0.12), transparent 16rem);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(244, 248, 255, 0.9)),
+    radial-gradient(circle at 8% 0%, rgba(16, 82, 224, 0.1), transparent 16rem);
+  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.13);
+  backdrop-filter: blur(14px);
 }
 
 .composer-queue-header {
@@ -954,7 +958,7 @@ h1 {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 0 4px 2px;
+  padding: 0 4px;
   color: var(--muted);
 }
 
@@ -964,46 +968,24 @@ h1 {
 }
 
 .composer-queue-header > div > span {
-  font-size: 0.76rem;
+  color: var(--text);
+  font-size: 0.8rem;
   font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  text-transform: none;
 }
 
 .composer-queue-header p {
   margin: 0;
   color: rgba(66, 83, 112, 0.82);
-  font-size: 0.82rem;
+  font-size: 0.78rem;
   font-weight: 600;
   letter-spacing: 0;
   text-transform: none;
 }
 
 .composer-queue-header > span {
-  min-width: 22px;
-  height: 22px;
-  display: inline-grid;
-  place-items: center;
-  border-radius: 999px;
-  background: rgba(16, 82, 224, 0.12);
-  color: var(--accent);
-  letter-spacing: 0;
-}
-
-.composer-queue-item {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: stretch;
-  gap: 10px;
-  padding: 9px 10px;
-  border: 1px solid rgba(16, 82, 224, 0.14);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.72);
-  box-shadow: 0 12px 24px rgba(16, 82, 224, 0.07);
-}
-
-.composer-queue-number {
-  width: 24px;
+  min-width: 24px;
   height: 24px;
   display: inline-grid;
   place-items: center;
@@ -1012,13 +994,43 @@ h1 {
   color: var(--accent-contrast);
   font-size: 0.78rem;
   font-weight: 800;
-  align-self: start;
-  margin-top: 20px;
+  letter-spacing: 0;
+}
+
+.composer-queue-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.06);
+}
+
+.composer-queue-item:hover {
+  border-color: rgba(16, 82, 224, 0.2);
+  box-shadow: 0 14px 28px rgba(16, 82, 224, 0.1);
+}
+
+.composer-queue-number {
+  width: 24px;
+  height: 24px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(16, 82, 224, 0.1);
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 800;
+  align-self: center;
+  letter-spacing: 0;
 }
 
 .composer-queue-editor {
   display: grid;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
 }
 
@@ -1028,34 +1040,35 @@ h1 {
   justify-content: space-between;
   gap: 8px;
   color: var(--muted);
-  font-size: 0.76rem;
+  font-size: 0.72rem;
   font-weight: 800;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
 .composer-queue-editor strong {
   border-radius: 999px;
-  background: rgba(16, 82, 224, 0.1);
+  background: rgba(16, 82, 224, 0.08);
   color: var(--accent);
-  padding: 3px 8px;
+  padding: 3px 9px;
   font-size: 0.68rem;
   letter-spacing: 0.04em;
 }
 
 .composer-queue-editor textarea {
-  min-height: 38px;
+  min-height: 34px;
   max-height: 96px;
-  padding: 9px 10px;
+  padding: 8px 10px;
   border-radius: 12px;
-  background: rgba(242, 247, 255, 0.85);
+  border-color: rgba(15, 23, 42, 0.08);
+  background: rgba(248, 250, 252, 0.9);
   font-size: 0.9rem;
   line-height: 1.35;
 }
 
 .composer-queue-delete {
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1064,7 +1077,7 @@ h1 {
   background: rgba(255, 255, 255, 0.86);
   color: #dc2626;
   cursor: pointer;
-  align-self: end;
+  align-self: center;
   transition:
     transform 140ms ease,
     border-color 140ms ease,
