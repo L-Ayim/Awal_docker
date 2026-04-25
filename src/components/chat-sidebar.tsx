@@ -1,6 +1,6 @@
 "use client";
 
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { PanelLeftClose, Pencil, Plus, Trash2 } from "lucide-react";
 import type { ChatSession } from "@/types/chat";
 
 type ChatSidebarProps = {
@@ -10,7 +10,9 @@ type ChatSidebarProps = {
   sidebarTitleDraft: string;
   isBootstrapping: boolean;
   isOpen: boolean;
+  isCollapsed: boolean;
   onClose: () => void;
+  onToggleCollapsed: () => void;
   onNewChat: () => void | Promise<void>;
   onSelectSession: (id: string) => void;
   onStartEditing: (id: string, title: string) => void;
@@ -26,7 +28,9 @@ export function ChatSidebar({
   sidebarTitleDraft,
   isBootstrapping,
   isOpen,
+  isCollapsed,
   onClose,
+  onToggleCollapsed,
   onNewChat,
   onSelectSession,
   onStartEditing,
@@ -37,8 +41,19 @@ export function ChatSidebar({
   return (
     <>
       {isOpen ? <button className="mobile-sidebar-overlay" onClick={onClose} aria-label="Close sidebar" /> : null}
-      <aside className={`sidebar ${isOpen ? "sidebar-mobile-open" : ""}`}>
+      <aside className={`sidebar ${isOpen ? "sidebar-mobile-open" : ""} ${isCollapsed ? "sidebar-collapsed" : ""}`}>
         <div className="sidebar-brand">
+          {!isCollapsed ? (
+            <button
+              className="sidebar-collapse-toggle"
+              type="button"
+              onClick={onToggleCollapsed}
+              aria-label="Collapse sidebar"
+              title="Collapse sidebar"
+            >
+              <PanelLeftClose aria-hidden="true" />
+            </button>
+          ) : null}
           <h1>
             <span className="sidebar-brand-mark">
               <img src="/awal-logo.png" alt="Awal logo" />
@@ -53,6 +68,7 @@ export function ChatSidebar({
           type="button"
           disabled={isBootstrapping}
           aria-label="New chat"
+          title="New chat"
         >
           <Plus aria-hidden="true" />
           <span>New Chat</span>
@@ -63,6 +79,7 @@ export function ChatSidebar({
           <div className="sidebar-session-list">
             {sessions.map((session) => {
               const isActive = session.id === activeSessionId;
+              const avatarLabel = session.title.trim().charAt(0).toUpperCase() || "A";
 
               return (
                 <div
@@ -98,10 +115,16 @@ export function ChatSidebar({
                           onSelectSession(session.id);
                           onClose();
                         }}
+                        title={session.title}
                       >
-                        <strong>{session.title}</strong>
-                        <span>
-                          {new Date(session.createdAt).toLocaleDateString()}
+                        <span className="sidebar-session-avatar" aria-hidden="true">
+                          {avatarLabel}
+                        </span>
+                        <span className="sidebar-session-copy">
+                          <strong>{session.title}</strong>
+                          <span>
+                            {new Date(session.createdAt).toLocaleDateString()}
+                          </span>
                         </span>
                       </button>
                     )}

@@ -29,6 +29,7 @@ export default function HomePage() {
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [sidebarTitleDraft, setSidebarTitleDraft] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const activeSession = useMemo(
     () => sessions.find((session) => session.id === activeSessionId) ?? sessions[0] ?? null,
@@ -47,7 +48,7 @@ export default function HomePage() {
 
   return (
     <main className="app-shell">
-      <section className="sidebar-shell">
+      <section className={`sidebar-shell ${sidebarCollapsed ? "sidebar-shell-collapsed" : ""}`}>
         <ChatSidebar
           sessions={sessions}
           activeSessionId={activeSessionId}
@@ -57,7 +58,9 @@ export default function HomePage() {
           onSelectSession={setActiveSessionId}
           isBootstrapping={isBootstrapping}
           isOpen={sidebarOpen}
+          isCollapsed={sidebarCollapsed}
           onClose={() => setSidebarOpen(false)}
+          onToggleCollapsed={() => setSidebarCollapsed((current) => !current)}
           onStartEditing={(id, title) => {
             setEditingSessionId(id);
             setSidebarTitleDraft(title);
@@ -74,6 +77,8 @@ export default function HomePage() {
           <ChatHeader
             title={activeTitle}
             onOpenSidebar={() => setSidebarOpen(true)}
+            isSidebarCollapsed={sidebarCollapsed}
+            onToggleSidebarCollapsed={() => setSidebarCollapsed((current) => !current)}
           />
           <ChatMessageList
             session={activeSession}
