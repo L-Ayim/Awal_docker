@@ -783,8 +783,17 @@ h1 {
   padding: 2px 2px 4px;
 }
 
+.upload-document-list-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
 .upload-document-list-header strong {
   font-size: 0.95rem;
+  flex: 0 0 auto;
 }
 
 .upload-document-list-header span,
@@ -792,6 +801,42 @@ h1 {
   color: var(--muted);
   font-size: 0.82rem;
   font-weight: 700;
+}
+
+.upload-document-search {
+  width: min(360px, 100%);
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 11px;
+  border: 1px solid rgba(16, 82, 224, 0.16);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--muted);
+}
+
+.upload-document-search svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+.upload-document-search input {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.upload-document-search input::placeholder {
+  color: var(--muted);
+  opacity: 0.82;
 }
 
 .upload-document-list-tools {
@@ -1163,10 +1208,24 @@ h1 {
 
   .upload-document-list-header {
     align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .upload-document-list-title {
+    width: 100%;
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .upload-document-search {
+    width: 100%;
   }
 
   .upload-document-list-tools {
+    width: 100%;
     flex-wrap: wrap;
+    justify-content: flex-start;
   }
 
   .upload-document-row {

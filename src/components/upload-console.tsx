@@ -12,6 +12,7 @@ import {
   Play,
   RefreshCw,
   RotateCw,
+  Search,
   Square,
   Trash2,
   Upload
@@ -636,6 +637,8 @@ export function UploadConsole() {
   const [isStoppingIngestRuntime, setIsStoppingIngestRuntime] = useState(false);
   const [isDraggingUpload, setIsDraggingUpload] = useState(false);
   const [page, setPage] = useState(1);
+  const [documentSearch, setDocumentSearch] = useState("");
+  const [debouncedDocumentSearch, setDebouncedDocumentSearch] = useState("");
   const [pagination, setPagination] = useState({
     page: 1,
     pageSize: 25,
@@ -669,8 +672,17 @@ export function UploadConsole() {
       return;
     }
 
+    const params = new URLSearchParams({
+      page: String(page),
+      pageSize: String(pagination.pageSize)
+    });
+
+    if (debouncedDocumentSearch.trim()) {
+      params.set("q", debouncedDocumentSearch.trim());
+    }
+
     const payload = await parseJson<DocumentsResponse>(
-      await fetch(`${documentUrl}?page=${page}&pageSize=${pagination.pageSize}`, {
+      await fetch(`${documentUrl}?${params.toString()}`, {
         cache: "no-store"
       })
     );
@@ -754,7 +766,16 @@ export function UploadConsole() {
     }, 8000);
 
     return () => window.clearInterval(id);
-  }, [documentUrl, page, pagination.pageSize]);
+  }, [documentUrl, page, pagination.pageSize, debouncedDocumentSearch]);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setPage(1);
+      setDebouncedDocumentSearch(documentSearch.trim());
+    }, 250);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [documentSearch]);
 
   useEffect(() => {
     let alive = true;
@@ -1350,15 +1371,29 @@ export function UploadConsole() {
 
       <section className="upload-console-table" aria-label="Documents">
         <div className="upload-document-list-header">
-          <strong>Documents</strong>
+          <div className="upload-document-list-title">
+            <strong>Documents</strong>
+            <label className="upload-document-search">
+              <Search aria-hidden="true" />
+              <input
+                type="search"
+                value={documentSearch}
+                onChange={(event) => setDocumentSearch(event.target.value)}
+                placeholder="Search documents"
+                aria-label="Search documents"
+              />
+            </label>
+          </div>
           <div className="upload-document-list-tools">
             <span>
               {pagination.total === 0
-                ? "0 total"
+                ? debouncedDocumentSearch
+                  ? "0 matches"
+                  : "0 total"
                 : `${(pagination.page - 1) * pagination.pageSize + 1}-${Math.min(
                     pagination.page * pagination.pageSize,
                     pagination.total
-                  )} of ${pagination.total}`}
+                  )} of ${pagination.total}${debouncedDocumentSearch ? " matches" : ""}`}
             </span>
             <button
               type="button"
@@ -1379,7 +1414,9 @@ export function UploadConsole() {
         {isLoading ? (
           <div className="upload-console-empty">Loading documents...</div>
         ) : documents.length === 0 ? (
-          <div className="upload-console-empty">No documents uploaded yet.</div>
+          <div className="upload-console-empty">
+            {debouncedDocumentSearch ? "No documents match that search." : "No documents uploaded yet."}
+          </div>
         ) : (
           documents.map((document) => {
             const detail = detailsById[document.id];

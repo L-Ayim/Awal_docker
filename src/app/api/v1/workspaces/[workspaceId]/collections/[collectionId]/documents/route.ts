@@ -115,6 +115,7 @@ export async function GET(request: Request, context: RouteContext) {
       10,
       Math.min(100, Number.parseInt(searchParams.get("pageSize") || "25", 10) || 25)
     );
+    const query = (searchParams.get("q") || "").trim();
     const skip = (page - 1) * pageSize;
     const collection = await prisma.collection.findFirst({
       where: {
@@ -135,7 +136,33 @@ export async function GET(request: Request, context: RouteContext) {
       collectionId,
       status: {
         not: "archived" as const
-      }
+      },
+      ...(query
+        ? {
+            OR: [
+              {
+                title: {
+                  contains: query,
+                  mode: "insensitive" as const
+                }
+              },
+              {
+                mimeType: {
+                  contains: query,
+                  mode: "insensitive" as const
+                }
+              },
+              {
+                latestRevision: {
+                  checksum: {
+                    contains: query,
+                    mode: "insensitive" as const
+                  }
+                }
+              }
+            ]
+          }
+        : {})
     };
     const [total, readyCount, workingCount, failedCount, documents] = await prisma.$transaction([
       prisma.document.count({ where }),
