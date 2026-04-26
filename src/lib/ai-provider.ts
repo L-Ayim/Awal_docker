@@ -84,6 +84,10 @@ const memoryObjectResponseSchema = z.object({
   objects: z.array(memoryObjectSchema).max(32).default([])
 });
 
+const looseMemoryObjectResponseSchema = z.object({
+  objects: z.array(memoryObjectSchema.partial()).max(32).default([])
+});
+
 function trimTrailingSlash(value: string) {
   return value.endsWith("/") ? value.slice(0, -1) : value;
 }
@@ -474,6 +478,29 @@ function parseJsonObjectLenient(content: string) {
       throw firstError;
     }
   }
+}
+
+function normalizeGeneratedMemoryObjects(content: string) {
+  const parsed = looseMemoryObjectResponseSchema.parse(parseJsonObjectLenient(content));
+
+  return {
+    objects: parsed.objects
+      .map((object) => {
+        const body = String(object.body || object.summary || object.title || "").trim();
+        const summary = String(object.summary || body || object.title || "").trim();
+
+        return {
+          chunkIndex: object.chunkIndex,
+          kind: object.kind,
+          title: object.title,
+          body,
+          summary,
+          tags: object.tags || [],
+          aliases: object.aliases || []
+        };
+      })
+      .filter((object) => object.body.length >= 12 && object.summary.length >= 8)
+  };
 }
 
 function normalizeResponseKind(
@@ -1239,7 +1266,7 @@ export async function generateDocumentMemoryObjects(params: {
       });
 
       const content = sanitizeGeneratedAnswer(json.choices?.[0]?.message?.content || "");
-      parsed = memoryObjectResponseSchema.parse(parseJsonObjectLenient(content));
+      parsed = memoryObjectResponseSchema.parse(normalizeGeneratedMemoryObjects(content));
       lastError = null;
       break;
     } catch (error) {
