@@ -231,6 +231,14 @@ async function listPods() {
   return runpodFetch<RunPodPod[]>("/pods");
 }
 
+async function getPodById(podId: string) {
+  try {
+    return await runpodFetch<RunPodPod>(`/pods/${podId}`);
+  } catch {
+    return null;
+  }
+}
+
 function isProfilePod(pod: RunPodPod, profile: RuntimeProfile) {
   return String(pod.name || "").startsWith(profile.namePrefix);
 }
@@ -710,6 +718,27 @@ export async function wakeGpuRuntime(
   const profile = getRuntimeProfile(kind);
 
   const pod = await withRuntimeWakeLock(kind, async () => {
+    const runtime = await getGpuRuntimeState(kind);
+
+    if (
+      runtime.podId &&
+      ["ready", "waking"].includes(runtime.status)
+    ) {
+      const storedPod = await getPodById(runtime.podId);
+
+      if (storedPod && isProfilePod(storedPod, profile) && isActivePod(storedPod)) {
+        await markPodReady(storedPod, profile);
+        return storedPod;
+      }
+    }
+
+    const existing = await findActiveRuntimePod(profile);
+
+    if (existing) {
+      await markPodReady(existing, profile);
+      return existing;
+    }
+
     await updateRuntime(
       {
         status: "waking",
@@ -718,13 +747,6 @@ export async function wakeGpuRuntime(
       },
       kind
     );
-
-    const existing = await findActiveRuntimePod(profile);
-
-    if (existing) {
-      await markPodReady(existing, profile);
-      return existing;
-    }
 
     const created = await createRunPodPod(profile);
 

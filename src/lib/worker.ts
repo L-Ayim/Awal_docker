@@ -12,7 +12,6 @@ import {
   materializeGeneratedIndexCards
 } from "@/lib/index-cards";
 import { buildPdfCitationIndex, locateChunkInPdf } from "@/lib/pdf-citations";
-import { sleepGpuRuntime } from "@/lib/gpu-runtime";
 import { readStoredBytes } from "@/lib/storage";
 
 const MEMORY_OBJECT_BATCH_SIZE = 3;
@@ -372,7 +371,6 @@ export async function processQueuedIngestionJob() {
       ...chunk,
       documentTitle: queuedJob.documentRevision.document.title
     }));
-    await sleepGpuRuntime({ kind: "ingest" }).catch(() => undefined);
 
     let generatedMemoryObjects: Array<{
       chunkIndex: number;
