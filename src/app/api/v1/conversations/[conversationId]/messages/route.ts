@@ -4,6 +4,7 @@ import { badRequest, notFound, ok, serverError, validationError } from "@/lib/ap
 import {
   generateEmbeddings,
   generateGroundedAnswer,
+  generateStreamingGroundedAnswer,
   getAiRuntimeConfig,
   rerankEvidence
 } from "@/lib/ai-provider";
@@ -29,82 +30,6 @@ function splitAssistantStreamChunks(content: string) {
     content.match(/[^.!?\n]+(?:[.!?]+["')\]]*|\n|$)/g)?.map((chunk) => chunk.trimStart()) ?? [];
 
   return chunks.filter(Boolean);
-}
-
-function createMessageStream(params: {
-  requestUrl: string;
-  content: string;
-}) {
-  const encoder = new TextEncoder();
-
-  return new ReadableStream({
-    async start(controller) {
-      const send = (event: string, data: unknown) =>
-        controller.enqueue(encoder.encode(encodeSseEvent(event, data)));
-
-      try {
-        send("status", { stage: "queued" });
-        send("status", { stage: "generating" });
-
-        const url = new URL(params.requestUrl);
-        url.searchParams.delete("stream");
-
-        const response = await fetch(url, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            content: params.content
-          })
-        });
-
-        const payload = (await response.json().catch(() => null)) as
-          | {
-              userMessage?: unknown;
-              assistantMessage?: {
-                content?: string;
-              };
-            }
-          | { message?: string }
-          | null;
-
-        if (!response.ok) {
-          const message =
-            payload && "message" in payload && typeof payload.message === "string"
-              ? payload.message
-              : "Failed to create conversation message.";
-
-          send("error", { message });
-          return;
-        }
-
-        if (!payload || !("userMessage" in payload) || !("assistantMessage" in payload)) {
-          send("error", { message: "Failed to stream conversation message." });
-          return;
-        }
-
-        send("user_message", payload.userMessage);
-        send("status", { stage: "streaming" });
-
-        const chunks = splitAssistantStreamChunks(payload.assistantMessage?.content ?? "");
-
-        for (const chunk of chunks) {
-          send("assistant_delta", { delta: chunk });
-          await new Promise((resolve) => setTimeout(resolve, 18));
-        }
-
-        send("done", payload);
-      } catch (streamError) {
-        send("error", {
-          message:
-            streamError instanceof Error ? streamError.message : "Streaming failed."
-        });
-      } finally {
-        controller.close();
-      }
-    }
-  });
 }
 
 function createSseResponse(stream: ReadableStream) {
@@ -459,15 +384,6 @@ export async function POST(request: Request, context: RouteContext) {
       return validationError(parsed.error);
     }
 
-    if (streamResponse) {
-      return createSseResponse(
-        createMessageStream({
-          requestUrl: request.url,
-          content: parsed.data.content
-        })
-      );
-    }
-
     const conversation = await prisma.conversation.findUnique({
       where: { id: conversationId },
       include: {
@@ -661,6 +577,289 @@ export async function POST(request: Request, context: RouteContext) {
           limit: 8
         })
       : initialMatches.slice(0, 8);
+
+    const persistAnswer = async (
+      generated:
+        | Awaited<ReturnType<typeof generateGroundedAnswer>>
+        | Awaited<ReturnType<typeof generateStreamingGroundedAnswer>>
+        | null,
+      generationFailureReason: string | null
+    ) => {
+      const result = await prisma.$transaction(async (tx) => {
+        const userMessage = await tx.message.create({
+          data: {
+            conversationId,
+            role: "user",
+            content: parsed.data.content
+          }
+        });
+
+        const generatedAnswer =
+          generated?.provider === "vast-openai-compatible" ? generated : null;
+        const assistantContent =
+          generatedAnswer
+            ? renderStructuredAnswer({
+                lead: generatedAnswer.lead,
+                bullets: generatedAnswer.bullets,
+                matches: rankedMatches.map((match) => ({
+                  documentTitle: match.documentTitle,
+                  pageStart: match.pageStart,
+                  pageEnd: match.pageEnd,
+                  paragraphStart: match.paragraphStart,
+                  paragraphEnd: match.paragraphEnd,
+                  lineStart: match.lineStart,
+                  lineEnd: match.lineEnd
+                }))
+              })
+            : readyDocuments.length === 0
+              ? "I don't have any ready documents in this collection yet. Upload and process a document first, then ask again."
+            : rankedMatches.length === 0
+              ? "I couldn't find grounded evidence for that question in the documents I have ready right now."
+            : generationFailureReason
+              ? "Awal could not finish starting the 32B runtime for this request. Please try again in a moment."
+              : "Awal could not generate an answer for this request. Please try again in a moment.";
+
+        const assistantState =
+          generatedAnswer
+            ? generatedAnswer.answerState
+            : readyDocuments.length === 0
+              ? "ingestion_pending"
+            : rankedMatches.length === 0
+              ? "insufficient_evidence"
+              : "insufficient_evidence";
+
+        const assistantMessage = await tx.message.create({
+          data: {
+            conversationId,
+            role: "assistant",
+            content: assistantContent
+          }
+        });
+
+        const answerRecord = await tx.answerRecord.create({
+          data: {
+            conversationId,
+            messageId: assistantMessage.id,
+            state: assistantState,
+            modelName:
+              generated?.modelName ??
+              (aiConfig.hasGenerationProvider ? aiConfig.llmModel : null),
+            refusalReason:
+              generatedAnswer
+                ? generatedAnswer.answerState === "insufficient_evidence"
+                  ? "model_reported_insufficient_evidence"
+                  : null
+              : readyDocuments.length === 0
+                ? "no_ready_documents"
+              : rankedMatches.length === 0
+                ? "no_matching_evidence"
+              : generationFailureReason
+                ? generationFailureReason.slice(0, 255)
+                : null
+          }
+        });
+
+        if (rankedMatches.length > 0) {
+          const usedEvidenceIds =
+            generatedAnswer
+              ? collectUsedEvidenceIds({
+                  lead: generatedAnswer.lead,
+                  bullets: generatedAnswer.bullets
+                })
+              : [];
+          const selectedEvidenceSet = new Set(usedEvidenceIds);
+          const retrievalTrace = await tx.retrievalTrace.create({
+            data: {
+              conversationId,
+              messageId: assistantMessage.id,
+              queryText: retrievalQuery,
+              retrievalMode: rerankResult
+                ? "lexical+dense+rerank"
+                : queryEmbedding
+                  ? "lexical+dense"
+                : aiConfig.hasGenerationProvider
+                  ? "lexical+llm"
+                  : "lexical",
+              thresholdPassed: true
+            }
+          });
+
+          for (const [index, match] of rankedMatches.entries()) {
+            await tx.retrievalCandidate.create({
+              data: {
+                retrievalTraceId: retrievalTrace.id,
+                chunkId: match.id,
+                denseScore: match.denseScore,
+                lexicalScore: match.lexicalScore,
+                hybridScore: match.hybridScore,
+                rerankScore: match.rerankScore,
+                finalRank: index + 1,
+                selected: generatedAnswer ? selectedEvidenceSet.has(index + 1) : false
+              }
+            });
+          }
+
+          const citationEvidenceIds = generatedAnswer
+            ? usedEvidenceIds.length > 0
+              ? usedEvidenceIds
+              : buildFallbackEvidenceIds({
+                  generated: generatedAnswer,
+                  matchCount: rankedMatches.length
+                })
+            : [];
+
+          for (const evidenceId of citationEvidenceIds) {
+            const match = rankedMatches[evidenceId - 1];
+
+            if (!match) {
+              continue;
+            }
+
+            const citationSpanId = await ensureCitationSpan({
+              tx,
+              match
+            });
+
+            await tx.answerCitation.create({
+              data: {
+                answerRecordId: answerRecord.id,
+                citationSpanId,
+                citationOrder: evidenceId
+              }
+            });
+          }
+        }
+
+        return { userMessage, assistantMessage, answerRecord };
+      });
+
+      const hydratedMessages = await prisma.message.findMany({
+        where: {
+          id: {
+            in: [result.userMessage.id, result.assistantMessage.id]
+          }
+        },
+        include: {
+          answerRecord: {
+            include: {
+              citations: {
+                orderBy: {
+                  citationOrder: "asc"
+                },
+                include: {
+                  citationSpan: {
+                    include: {
+                      chunk: {
+                        include: {
+                          documentRevision: {
+                            include: {
+                              document: {
+                                select: {
+                                  id: true,
+                                  title: true,
+                                  mimeType: true
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        orderBy: {
+          createdAt: "asc"
+        }
+      });
+
+      const userMessage = hydratedMessages.find((message) => message.id === result.userMessage.id);
+      const assistantMessage = hydratedMessages.find(
+        (message) => message.id === result.assistantMessage.id
+      );
+
+      return {
+        userMessage: userMessage ? serializeMessage(userMessage) : result.userMessage,
+        assistantMessage: assistantMessage
+          ? serializeMessage(assistantMessage)
+          : result.assistantMessage,
+        answerRecord: result.answerRecord
+      };
+    };
+
+    if (streamResponse) {
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream({
+        async start(controller) {
+          const send = (event: string, data: unknown) =>
+            controller.enqueue(encoder.encode(encodeSseEvent(event, data)));
+
+          try {
+            send("status", { stage: "queued" });
+            send("status", { stage: "generating" });
+
+            let generated:
+              | Awaited<ReturnType<typeof generateStreamingGroundedAnswer>>
+              | null = null;
+            let generationFailureReason: string | null = null;
+            let streamedAnyContent = false;
+
+            if (aiConfig.hasGenerationProvider && readyDocuments.length > 0 && rankedMatches.length > 0) {
+              try {
+                send("status", { stage: "streaming" });
+                generated = await generateStreamingGroundedAnswer({
+                  query: contextualQuery,
+                  queryProfile,
+                  matches: rankedMatches.map((match) => ({
+                    text: match.text,
+                    chunkIndex: match.chunkIndex,
+                    documentTitle: match.documentTitle,
+                    pageStart: match.pageStart,
+                    pageEnd: match.pageEnd,
+                    paragraphStart: match.paragraphStart,
+                    paragraphEnd: match.paragraphEnd,
+                    lineStart: match.lineStart,
+                    lineEnd: match.lineEnd
+                  })),
+                  onDelta: (delta) => {
+                    streamedAnyContent = true;
+                    send("assistant_delta", { delta });
+                  }
+                });
+              } catch (error) {
+                generationFailureReason =
+                  error instanceof Error ? error.message : "generation_provider_failed";
+              }
+            }
+
+            const payload = await persistAnswer(generated, generationFailureReason);
+
+            if (!streamedAnyContent) {
+              send("status", { stage: "streaming" });
+
+              for (const chunk of splitAssistantStreamChunks(payload.assistantMessage.content)) {
+                send("assistant_delta", { delta: chunk });
+                await new Promise((resolve) => setTimeout(resolve, 18));
+              }
+            }
+
+            send("done", payload);
+          } catch (streamError) {
+            send("error", {
+              message:
+                streamError instanceof Error ? streamError.message : "Streaming failed."
+            });
+          } finally {
+            controller.close();
+          }
+        }
+      });
+
+      return createSseResponse(stream);
+    }
 
     let generated:
       | Awaited<ReturnType<typeof generateGroundedAnswer>>

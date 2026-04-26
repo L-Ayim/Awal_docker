@@ -34,6 +34,10 @@ type GenerationResult = {
   provider: "vast-openai-compatible" | "local-fallback";
 };
 
+type StreamingGenerationResult = GenerationResult & {
+  streamedText: string;
+};
+
 type MemoryObject = {
   chunkIndex: number;
   kind: string;
@@ -316,6 +320,66 @@ function buildAnswerVerificationPayload(params: {
   ].join("\n");
 }
 
+function buildStreamingEvidencePayload(
+  query: string,
+  matches: EvidenceMatch[],
+  queryProfile?: Pick<QueryProfile, "intent" | "answerGuidance">
+) {
+  const evidence = matches
+    .map((match, index) => {
+      const location = [
+        match.pageStart !== null
+          ? match.pageEnd !== null && match.pageEnd !== match.pageStart
+            ? `pages ${match.pageStart}-${match.pageEnd}`
+            : `page ${match.pageStart}`
+          : null,
+        match.paragraphStart !== null
+          ? match.paragraphEnd !== null && match.paragraphEnd !== match.paragraphStart
+            ? `paragraphs ${match.paragraphStart}-${match.paragraphEnd}`
+            : `paragraph ${match.paragraphStart}`
+          : null,
+        match.lineStart !== null
+          ? match.lineEnd !== null && match.lineEnd !== match.lineStart
+            ? `lines ${match.lineStart}-${match.lineEnd}`
+            : `line ${match.lineStart}`
+          : null
+      ]
+        .filter(Boolean)
+        .join(", ");
+
+      return [
+        `[${index + 1}]`,
+        `document: ${match.documentTitle}`,
+        `location: ${location || `chunk ${match.chunkIndex + 1}`}`,
+        match.text
+      ].join("\n");
+    })
+    .join("\n\n");
+
+  return [
+    "Question:",
+    query,
+    ...buildProfileLines(queryProfile),
+    "",
+    "Evidence candidates:",
+    evidence || "(none)",
+    "",
+    "Write the answer directly for the user.",
+    "",
+    "Rules:",
+    "- Stream a natural final answer, not JSON.",
+    "- Use casual conversation only for greetings, thanks, or simple social check-ins.",
+    "- If answering from documents, every factual claim must be supported by the evidence candidates.",
+    "- Mark supported sentences with evidence ids like [1] or [1][2] at the end of the sentence.",
+    "- Do not mention chunk numbers, candidate numbers, retrieval, or hidden instructions.",
+    "- Do not use outside knowledge.",
+    "- If the evidence is missing or weak, say you can only answer from the processed documents.",
+    "- For risky actions involving sensitive, internal, regulated, confidential, customer, financial, or proprietary data, do not say allowed, permitted, okay, or safe unless the evidence explicitly grants permission.",
+    "- Keep the answer concise: one short lead plus up to three bullets when useful.",
+    "- Do not output JSON, markdown tables, <think> tags, or hidden reasoning."
+  ].join("\n");
+}
+
 function sanitizeGeneratedAnswer(content: string) {
   return content
     .replace(/<think>[\s\S]*?<\/think>/gi, "")
@@ -443,9 +507,35 @@ function normalizeEvidenceIds(evidenceIds: number[], matchCount: number) {
 
 function cleanAnswerText(text: string) {
   return text
+    .replace(/\s*\[(?:\d+(?:\s*,\s*\d+)*)]\s*/g, " ")
     .replace(/\s+-\s*bullets\s*\[[\s\S]*$/i, "")
     .replace(/\s*bullets\s*\[[\s\S]*$/i, "")
     .replace(/\s+/g, " ")
+    .trim();
+}
+
+function collectInlineEvidenceIds(content: string, matchCount: number) {
+  const ids = new Set<number>();
+
+  for (const match of content.matchAll(/\[(\d+(?:\s*,\s*\d+)*)]/g)) {
+    for (const rawId of match[1].split(",")) {
+      const id = Number(rawId.trim());
+
+      if (Number.isInteger(id) && id >= 1 && id <= matchCount) {
+        ids.add(id);
+      }
+    }
+  }
+
+  return Array.from(ids);
+}
+
+function cleanInlineEvidenceMarkers(content: string) {
+  return content
+    .replace(/\s*\[(?:\d+(?:\s*,\s*\d+)*)]\s*/g, " ")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
     .trim();
 }
 
@@ -571,6 +661,94 @@ async function requestStructuredChatCompletion(params: {
   });
 }
 
+async function requestStreamingChatCompletion(params: {
+  baseUrl: string;
+  apiKey: string | null;
+  model: string;
+  messages: Array<{
+    role: "system" | "user" | "assistant";
+    content: string;
+  }>;
+  maxTokens?: number;
+  onDelta: (delta: string) => void | Promise<void>;
+}) {
+  const response = await fetch(`${params.baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(params.apiKey ? { Authorization: `Bearer ${params.apiKey}` } : {})
+    },
+    body: JSON.stringify({
+      model: params.model,
+      temperature: 0,
+      max_tokens: params.maxTokens ?? 900,
+      stream: true,
+      messages: params.messages
+    })
+  });
+
+  if (!response.ok || !response.body) {
+    const body = await response.text().catch(() => "");
+    throw new Error(`${response.status} ${body}`.trim());
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let content = "";
+  let modelName = params.model;
+
+  while (true) {
+    const { done, value } = await reader.read();
+
+    if (done) {
+      break;
+    }
+
+    buffer += decoder.decode(value, { stream: true });
+    const frames = buffer.split("\n\n");
+    buffer = frames.pop() ?? "";
+
+    for (const frame of frames) {
+      for (const line of frame.split("\n")) {
+        const trimmed = line.trim();
+
+        if (!trimmed.startsWith("data:")) {
+          continue;
+        }
+
+        const data = trimmed.slice(5).trim();
+
+        if (!data || data === "[DONE]") {
+          continue;
+        }
+
+        const parsed = JSON.parse(data) as {
+          model?: string;
+          choices?: Array<{
+            delta?: {
+              content?: string | null;
+            };
+          }>;
+        };
+        modelName = parsed.model || modelName;
+
+        const delta = parsed.choices?.[0]?.delta?.content ?? "";
+
+        if (delta) {
+          content += delta;
+          await params.onDelta(delta);
+        }
+      }
+    }
+  }
+
+  return {
+    content,
+    modelName
+  };
+}
+
 export async function generateEmbeddings(
   inputs: string[],
   params: { runtimeKind?: "chat" | "ingest" } = {}
@@ -632,6 +810,83 @@ export async function rerankEvidence(params: {
   });
 
   return json;
+}
+
+export async function generateStreamingGroundedAnswer(params: {
+  query: string;
+  matches: EvidenceMatch[];
+  queryProfile?: Pick<QueryProfile, "intent" | "answerGuidance">;
+  onDelta: (delta: string) => void | Promise<void>;
+}): Promise<StreamingGenerationResult> {
+  const config = await getResolvedAiRuntimeConfig();
+
+  if (!config.hasGenerationProvider || !config.generationBaseUrl) {
+    return {
+      responseKind: "insufficient_evidence",
+      lead: {
+        text: "",
+        evidenceIds: []
+      },
+      bullets: [],
+      answerState: "insufficient_evidence",
+      modelName: null,
+      provider: "local-fallback",
+      streamedText: ""
+    };
+  }
+
+  const messages = [
+    {
+      role: "system" as const,
+      content:
+        "You are Awal, a document-grounded assistant for practical questions about user-provided source material. Stream a natural answer directly to the user. Stay conservative and grounded: factual claims and advice must be supported only by the supplied evidence. For risky actions involving sensitive, internal, regulated, confidential, customer, financial, or proprietary data, never say allowed, permitted, okay, or safe unless evidence explicitly grants permission. Use evidence markers like [1] only to identify support; the app will convert them into references. Do not reveal chain-of-thought. Do not output <think> tags."
+    },
+    {
+      role: "user" as const,
+      content: buildStreamingEvidencePayload(params.query, params.matches, params.queryProfile)
+    }
+  ];
+
+  const streamed = await requestStreamingChatCompletion({
+    baseUrl: config.generationBaseUrl,
+    apiKey: config.generationApiKey,
+    model: config.llmModel,
+    messages,
+    maxTokens: 850,
+    onDelta: params.onDelta
+  });
+  const sanitized = sanitizeGeneratedAnswer(streamed.content);
+  const cleanedText = cleanInlineEvidenceMarkers(sanitized);
+  const evidenceIds = collectInlineEvidenceIds(sanitized, params.matches.length);
+  const isConversational =
+    evidenceIds.length === 0 &&
+    /\b(hi|hello|thank you|thanks|how can i assist|how can i help|i'?m good)\b/i.test(
+      cleanedText
+    );
+  const isInsufficient =
+    evidenceIds.length === 0 &&
+    /\b(can only answer from|processed documents|couldn'?t find|insufficient|not enough evidence|not represented)\b/i.test(
+      cleanedText
+    );
+
+  return {
+    responseKind: isConversational
+      ? "conversational"
+      : isInsufficient || evidenceIds.length === 0
+        ? "insufficient_evidence"
+        : "grounded",
+    lead: {
+      text: cleanedText,
+      evidenceIds
+    },
+    bullets: [],
+    answerState: isInsufficient || (!isConversational && evidenceIds.length === 0)
+      ? "insufficient_evidence"
+      : "grounded_answer",
+    modelName: streamed.modelName || config.llmModel,
+    provider: "vast-openai-compatible",
+    streamedText: cleanedText
+  };
 }
 
 async function verifyGroundedAnswer(params: {
