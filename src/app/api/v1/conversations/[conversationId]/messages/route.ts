@@ -31,6 +31,93 @@ function splitAssistantStreamChunks(content: string) {
   return chunks.filter(Boolean);
 }
 
+function createMessageStream(params: {
+  requestUrl: string;
+  content: string;
+}) {
+  const encoder = new TextEncoder();
+
+  return new ReadableStream({
+    async start(controller) {
+      const send = (event: string, data: unknown) =>
+        controller.enqueue(encoder.encode(encodeSseEvent(event, data)));
+
+      try {
+        send("status", { stage: "queued" });
+        send("status", { stage: "generating" });
+
+        const url = new URL(params.requestUrl);
+        url.searchParams.delete("stream");
+
+        const response = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            content: params.content
+          })
+        });
+
+        const payload = (await response.json().catch(() => null)) as
+          | {
+              userMessage?: unknown;
+              assistantMessage?: {
+                content?: string;
+              };
+            }
+          | { message?: string }
+          | null;
+
+        if (!response.ok) {
+          const message =
+            payload && "message" in payload && typeof payload.message === "string"
+              ? payload.message
+              : "Failed to create conversation message.";
+
+          send("error", { message });
+          return;
+        }
+
+        if (!payload || !("userMessage" in payload) || !("assistantMessage" in payload)) {
+          send("error", { message: "Failed to stream conversation message." });
+          return;
+        }
+
+        send("user_message", payload.userMessage);
+        send("status", { stage: "streaming" });
+
+        const chunks = splitAssistantStreamChunks(payload.assistantMessage?.content ?? "");
+
+        for (const chunk of chunks) {
+          send("assistant_delta", { delta: chunk });
+          await new Promise((resolve) => setTimeout(resolve, 18));
+        }
+
+        send("done", payload);
+      } catch (streamError) {
+        send("error", {
+          message:
+            streamError instanceof Error ? streamError.message : "Streaming failed."
+        });
+      } finally {
+        controller.close();
+      }
+    }
+  });
+}
+
+function createSseResponse(stream: ReadableStream) {
+  return new Response(stream, {
+    status: 201,
+    headers: {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive"
+    }
+  });
+}
+
 function renderStructuredAnswer(params: {
   lead: {
     text: string;
@@ -370,6 +457,15 @@ export async function POST(request: Request, context: RouteContext) {
 
     if (!parsed.success) {
       return validationError(parsed.error);
+    }
+
+    if (streamResponse) {
+      return createSseResponse(
+        createMessageStream({
+          requestUrl: request.url,
+          content: parsed.data.content
+        })
+      );
     }
 
     const conversation = await prisma.conversation.findUnique({
