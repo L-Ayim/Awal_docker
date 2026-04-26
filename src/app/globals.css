@@ -886,6 +886,56 @@ h1 {
   font-size: 0.92rem;
 }
 
+.runtime-status-pill {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--muted);
+  padding: 0 10px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.runtime-status-pill > span {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #94a3b8;
+  flex: 0 0 auto;
+}
+
+.runtime-status-pill strong {
+  font: inherit;
+  color: var(--text);
+}
+
+.runtime-status-pill em {
+  font-style: normal;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.runtime-status-pill.ready > span {
+  background: #16a34a;
+  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.12);
+}
+
+.runtime-status-pill.waking > span,
+.runtime-status-pill.stopping > span {
+  background: #f59e0b;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.14);
+}
+
+.runtime-status-pill.failed > span {
+  background: #dc2626;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.13);
+}
+
 .chat-thread {
   display: flex;
   flex-direction: column;

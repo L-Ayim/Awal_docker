@@ -76,6 +76,7 @@ export default function HomePage() {
         <section className="chat-shell">
           <ChatHeader
             title={activeTitle}
+            gpuRuntime={gpuRuntime}
             onOpenSidebar={() => setSidebarOpen(true)}
             isSidebarCollapsed={sidebarCollapsed}
             onToggleSidebarCollapsed={() => setSidebarCollapsed((current) => !current)}

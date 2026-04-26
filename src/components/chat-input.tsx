@@ -14,6 +14,8 @@ type ChatInputProps = {
   gpuRuntime: {
     automationEnabled: boolean;
     status: "asleep" | "waking" | "ready" | "stopping" | "failed";
+    podId: string | null;
+    podName: string | null;
     lastError: string | null;
   } | null;
   queuedMessages: QueuedComposerMessage[];

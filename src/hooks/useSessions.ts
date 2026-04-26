@@ -98,6 +98,8 @@ type GpuRuntimeStatus = "asleep" | "waking" | "ready" | "stopping" | "failed";
 type GpuRuntimeSnapshot = {
   automationEnabled: boolean;
   status: GpuRuntimeStatus;
+  podId: string | null;
+  podName: string | null;
   lastError: string | null;
 } | null;
 
@@ -630,10 +632,6 @@ export function useSessions() {
   }, [isSending, queuedMessages]);
 
   useEffect(() => {
-    if (!isSending) {
-      return;
-    }
-
     let canceled = false;
 
     async function pollRuntime() {
@@ -642,6 +640,8 @@ export function useSessions() {
           automationEnabled: boolean;
           runtime: {
             status: GpuRuntimeStatus;
+            podId: string | null;
+            podName: string | null;
             lastError: string | null;
           };
         }>(
@@ -654,6 +654,8 @@ export function useSessions() {
           setGpuRuntime({
             automationEnabled: data.automationEnabled,
             status: data.runtime.status,
+            podId: data.runtime.podId,
+            podName: data.runtime.podName,
             lastError: data.runtime.lastError
           });
         }
@@ -665,7 +667,7 @@ export function useSessions() {
     }
 
     void pollRuntime();
-    const intervalId = window.setInterval(() => void pollRuntime(), 5000);
+    const intervalId = window.setInterval(() => void pollRuntime(), isSending ? 5000 : 15000);
 
     return () => {
       canceled = true;
