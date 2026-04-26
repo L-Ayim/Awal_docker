@@ -1,7 +1,21 @@
 "use client";
 
 import { type DragEvent, useEffect, useRef, useState } from "react";
-import { ChevronDown, FileArchive, FileText, FolderUp, Play, RefreshCw, RotateCw, Square, Trash2, Upload } from "lucide-react";
+import Link from "next/link";
+import {
+  ChevronDown,
+  FileArchive,
+  FileText,
+  FolderUp,
+  Library,
+  MessageSquare,
+  Play,
+  RefreshCw,
+  RotateCw,
+  Square,
+  Trash2,
+  Upload
+} from "lucide-react";
 
 type BootstrapResponse = {
   workspace: {
@@ -513,6 +527,13 @@ export function UploadConsole() {
   const documentUrl = bootstrap
     ? `/api/v1/workspaces/${bootstrap.workspace.id}/collections/${bootstrap.collection.id}/documents`
     : null;
+  const readyCount = documents.filter(
+    (document) => statusLabel(document) === "completed" || document.status === "ready"
+  ).length;
+  const workingCount = documents.filter((document) =>
+    ["queued", "processing", "uploaded"].includes(statusLabel(document))
+  ).length;
+  const failedCount = documents.filter((document) => statusLabel(document) === "failed").length;
 
   async function refreshDocuments() {
     if (!documentUrl) {
@@ -831,40 +852,89 @@ export function UploadConsole() {
   }
 
   return (
-    <main className="upload-console">
-      <header className="upload-console-header">
-        <div>
-          <p className="upload-console-kicker">Awal document console</p>
-          <h1>Upload Library</h1>
-        </div>
-        <div className="upload-console-actions">
-          <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isUploading}>
-            <Upload aria-hidden="true" />
-            <span>{isUploading ? "Uploading" : "Upload files"}</span>
-          </button>
-          <button type="button" onClick={() => folderInputRef.current?.click()} disabled={isUploading}>
-            <Upload aria-hidden="true" />
-            <span>Upload folder</span>
-          </button>
-          <button type="button" onClick={() => void runNextJob()} disabled={isRunning}>
-            <Play aria-hidden="true" />
-            <span>{isRunning ? "Running" : "Run next job"}</span>
-          </button>
-          <button type="button" onClick={() => void refreshDocuments()} disabled={!documentUrl}>
-            <RefreshCw aria-hidden="true" />
-            <span>Refresh</span>
-          </button>
-        </div>
-      </header>
+    <main className="app-shell upload-app-shell">
+      <section className="sidebar-shell upload-sidebar-shell">
+        <aside className="sidebar upload-sidebar">
+          <div className="sidebar-brand">
+            <h1>
+              <span className="sidebar-brand-mark">
+                <img src="/awal-logo.png" alt="Awal logo" />
+              </span>
+              <span className="sidebar-brand-wordmark">Awal</span>
+            </h1>
+          </div>
 
-      <IngestRuntimePanel
-        runtime={ingestRuntime}
-        isWaking={isWakingIngestRuntime}
-        isStopping={isStoppingIngestRuntime}
-        onWake={() => void wakeIngestRuntime()}
-        onSleep={() => void sleepIngestRuntime()}
-        onRefresh={() => void refreshIngestRuntime().catch(() => undefined)}
-      />
+          <nav className="upload-nav" aria-label="Awal sections">
+            <Link className="upload-nav-item" href="/">
+              <MessageSquare aria-hidden="true" />
+              <span>Chat</span>
+            </Link>
+            <Link className="upload-nav-item active" href="/upload" aria-current="page">
+              <Library aria-hidden="true" />
+              <span>Library</span>
+            </Link>
+          </nav>
+
+          <div className="sidebar-section upload-sidebar-section">
+            <span className="sidebar-label">Ingestion</span>
+            <IngestRuntimePanel
+              runtime={ingestRuntime}
+              isWaking={isWakingIngestRuntime}
+              isStopping={isStoppingIngestRuntime}
+              onWake={() => void wakeIngestRuntime()}
+              onSleep={() => void sleepIngestRuntime()}
+              onRefresh={() => void refreshIngestRuntime().catch(() => undefined)}
+            />
+          </div>
+
+          <div className="sidebar-section upload-sidebar-section">
+            <span className="sidebar-label">Library</span>
+            <div className="upload-sidebar-stats">
+              <div>
+                <strong>{documents.length}</strong>
+                <span>Documents</span>
+              </div>
+              <div>
+                <strong>{readyCount}</strong>
+                <span>Ready</span>
+              </div>
+              <div>
+                <strong>{workingCount}</strong>
+                <span>Working</span>
+              </div>
+              <div>
+                <strong>{failedCount}</strong>
+                <span>Failed</span>
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        <section className="upload-console">
+          <header className="upload-console-header">
+            <div>
+              <p className="upload-console-kicker">Awal document console</p>
+              <h1>Upload Library</h1>
+            </div>
+            <div className="upload-console-actions">
+              <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isUploading}>
+                <Upload aria-hidden="true" />
+                <span>{isUploading ? "Uploading" : "Upload files"}</span>
+              </button>
+              <button type="button" onClick={() => folderInputRef.current?.click()} disabled={isUploading}>
+                <FolderUp aria-hidden="true" />
+                <span>Upload folder</span>
+              </button>
+              <button type="button" onClick={() => void runNextJob()} disabled={isRunning}>
+                <Play aria-hidden="true" />
+                <span>{isRunning ? "Running" : "Run queue"}</span>
+              </button>
+              <button type="button" onClick={() => void refreshDocuments()} disabled={!documentUrl}>
+                <RefreshCw aria-hidden="true" />
+                <span>Refresh</span>
+              </button>
+            </div>
+          </header>
 
       <input
         ref={fileInputRef}
@@ -945,11 +1015,11 @@ export function UploadConsole() {
           <span>Documents</span>
         </div>
         <div>
-          <strong>{documents.filter((document) => statusLabel(document) === "completed" || document.status === "ready").length}</strong>
+          <strong>{readyCount}</strong>
           <span>Ready</span>
         </div>
         <div>
-          <strong>{documents.filter((document) => ["queued", "processing", "uploaded"].includes(statusLabel(document))).length}</strong>
+          <strong>{workingCount}</strong>
           <span>Working</span>
         </div>
       </section>
@@ -1099,6 +1169,8 @@ export function UploadConsole() {
             );
           })
         )}
+      </section>
+        </section>
       </section>
     </main>
   );

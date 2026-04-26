@@ -276,20 +276,104 @@ h1 {
   border-radius: 999px;
 }
 
+.upload-app-shell {
+  max-width: 1320px;
+}
+
+.upload-sidebar-shell {
+  grid-template-columns: 280px 1fr;
+}
+
+.upload-sidebar {
+  gap: 22px;
+}
+
+.upload-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.upload-nav-item {
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  border: 1px solid rgba(16, 82, 224, 0.12);
+  border-radius: 14px;
+  color: var(--accent);
+  font-weight: 700;
+  background: linear-gradient(180deg, rgba(16, 82, 224, 0.05), rgba(19, 43, 103, 0.01));
+}
+
+.upload-nav-item.active {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+  color: #ffffff;
+  box-shadow: 0 12px 28px rgba(16, 82, 224, 0.18);
+}
+
+.upload-nav-item svg {
+  width: 18px;
+  height: 18px;
+}
+
+.upload-sidebar-section {
+  flex: 0 0 auto;
+}
+
+.upload-sidebar-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.upload-sidebar-stats div {
+  min-height: 72px;
+  padding: 12px;
+  border: 1px solid rgba(16, 82, 224, 0.12);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(16, 82, 224, 0.06), rgba(255, 255, 255, 0.86));
+}
+
+.upload-sidebar-stats strong {
+  display: block;
+  color: var(--text);
+  font-size: 1.35rem;
+  line-height: 1.1;
+}
+
+.upload-sidebar-stats span {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
 .upload-console {
-  height: 100dvh;
-  overflow: auto;
-  padding: 28px;
-  background: #f8fbff;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(217, 226, 236, 0.85);
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at top, rgba(16, 82, 224, 0.05), transparent 22rem),
+    linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  box-shadow: var(--shadow);
 }
 
 .upload-console-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 24px;
-  max-width: 1180px;
-  margin: 0 auto 18px;
+  padding: 28px 28px 22px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.72);
 }
 
 .upload-console-kicker {
@@ -302,7 +386,7 @@ h1 {
 
 .upload-console-header h1 {
   margin-top: 4px;
-  font-size: 2rem;
+  font-size: 1.28rem;
   letter-spacing: 0;
 }
 
@@ -350,8 +434,7 @@ h1 {
 }
 
 .upload-console-error {
-  max-width: 1180px;
-  margin: 0 auto 14px;
+  margin: 16px 28px 0;
   padding: 12px 14px;
   border: 1px solid rgba(185, 28, 28, 0.2);
   border-radius: 8px;
@@ -365,8 +448,7 @@ h1 {
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 18px;
-  max-width: 1180px;
-  margin: 0 auto 18px;
+  margin: 18px 28px;
   padding: 18px;
   border: 1px dashed rgba(16, 82, 224, 0.34);
   border-radius: 8px;
@@ -459,8 +541,7 @@ h1 {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
-  max-width: 1180px;
-  margin: 0 auto 18px;
+  margin: 0 28px 18px;
 }
 
 .upload-console-summary div {
@@ -485,13 +566,15 @@ h1 {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  max-width: 1180px;
-  margin: 0 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 28px 28px;
+  scrollbar-color: rgba(16, 82, 224, 0.35) transparent;
+  scrollbar-width: thin;
 }
 
 .upload-console-empty,
-.upload-document-card,
-.upload-document-row {
+.upload-document-card {
   border: 1px solid rgba(217, 226, 236, 0.9);
   border-radius: 8px;
   background: #ffffff;
@@ -513,6 +596,7 @@ h1 {
   gap: 14px;
   padding: 14px;
   align-items: start;
+  background: #ffffff;
 }
 
 .upload-document-icon {
@@ -702,12 +786,56 @@ h1 {
 }
 
 @media (max-width: 760px) {
+  .upload-app-shell {
+    padding: 14px;
+    overflow: auto;
+  }
+
+  .upload-sidebar-shell {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-height: auto;
+    overflow: visible;
+  }
+
+  .upload-sidebar {
+    border-radius: 18px;
+    gap: 16px;
+    overflow: visible;
+  }
+
+  .upload-nav {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .upload-sidebar-stats {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .upload-sidebar-stats div {
+    min-height: 60px;
+    padding: 9px;
+  }
+
+  .upload-sidebar-stats strong {
+    font-size: 1.1rem;
+  }
+
+  .upload-sidebar-stats span {
+    font-size: 0.68rem;
+  }
+
   .upload-console {
-    padding: 18px;
+    min-height: 70dvh;
+    overflow: visible;
+    border-radius: 18px;
   }
 
   .upload-console-header {
     display: block;
+    padding: 22px 18px 18px;
   }
 
   .upload-console-actions {
@@ -718,6 +846,7 @@ h1 {
   .upload-drop-zone {
     grid-template-columns: 1fr;
     align-items: start;
+    margin: 16px 18px;
   }
 
   .upload-drop-actions {
@@ -726,6 +855,12 @@ h1 {
 
   .upload-console-summary {
     grid-template-columns: 1fr;
+    margin: 0 18px 16px;
+  }
+
+  .upload-console-table {
+    overflow: visible;
+    padding: 0 18px 18px;
   }
 
   .upload-document-row {
@@ -1163,12 +1298,20 @@ h1 {
 
 .upload-ingest-runtime {
   display: flex;
-  justify-content: flex-end;
-  margin-top: -8px;
+  justify-content: stretch;
+  margin-top: 0;
 }
 
 .upload-ingest-runtime .runtime-status-pill {
-  min-width: 210px;
+  width: 100%;
+  min-width: 0;
+  justify-content: flex-start;
+  padding-right: 6px;
+}
+
+.upload-ingest-runtime .runtime-status-copy {
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .chat-thread {
@@ -2008,5 +2151,33 @@ h1 {
 
   .chat-citation-preview {
     margin-left: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .upload-app-shell {
+    height: 100dvh;
+    padding: 14px;
+  }
+
+  .upload-sidebar-shell {
+    height: auto;
+    overflow: visible;
+  }
+
+  .upload-sidebar {
+    position: static;
+    inset: auto;
+    width: 100%;
+    display: flex;
+    padding: 18px;
+    box-shadow: var(--shadow);
+  }
+
+  .upload-console {
+    min-height: 70dvh;
+    border-left: 1px solid rgba(217, 226, 236, 0.85);
+    border-right: 1px solid rgba(217, 226, 236, 0.85);
+    box-shadow: var(--shadow);
   }
 }
