@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { ChevronDown, FileText, Play, RefreshCw, RotateCw, Trash2, Upload } from "lucide-react";
+import { type DragEvent, useEffect, useRef, useState } from "react";
+import { ChevronDown, FileArchive, FileText, FolderUp, Play, RefreshCw, RotateCw, Trash2, Upload } from "lucide-react";
 
 type BootstrapResponse = {
   workspace: {
@@ -134,6 +134,33 @@ type UploadableFile = File & {
   webkitRelativePath?: string;
 };
 
+type UploadCandidate = {
+  file: File;
+  title: string;
+};
+
+type FileSystemEntryLike = {
+  name: string;
+  fullPath?: string;
+  isFile: boolean;
+  isDirectory: boolean;
+};
+
+type FileSystemFileEntryLike = FileSystemEntryLike & {
+  file: (successCallback: (file: File) => void, errorCallback?: (error: DOMException) => void) => void;
+};
+
+type FileSystemDirectoryReaderLike = {
+  readEntries: (
+    successCallback: (entries: FileSystemEntryLike[]) => void,
+    errorCallback?: (error: DOMException) => void
+  ) => void;
+};
+
+type FileSystemDirectoryEntryLike = FileSystemEntryLike & {
+  createReader: () => FileSystemDirectoryReaderLike;
+};
+
 async function parseJson<T>(response: Response): Promise<T> {
   const text = await response.text();
   const json = text ? JSON.parse(text) : null;
@@ -173,6 +200,95 @@ function formatDate(value: string | null) {
   return new Date(value).toLocaleString();
 }
 
+function fileTitle(file: UploadableFile) {
+  return file.webkitRelativePath?.trim() || file.name;
+}
+
+function fileToUploadCandidate(file: UploadableFile): UploadCandidate {
+  return {
+    file,
+    title: fileTitle(file)
+  };
+}
+
+function readDirectoryEntries(reader: FileSystemDirectoryReaderLike): Promise<FileSystemEntryLike[]> {
+  return new Promise((resolve, reject) => {
+    const entries: FileSystemEntryLike[] = [];
+
+    function readNextBatch() {
+      reader.readEntries(
+        (batch) => {
+          if (batch.length === 0) {
+            resolve(entries);
+            return;
+          }
+
+          entries.push(...batch);
+          readNextBatch();
+        },
+        (error) => reject(error)
+      );
+    }
+
+    readNextBatch();
+  });
+}
+
+function readFileEntry(entry: FileSystemFileEntryLike): Promise<File> {
+  return new Promise((resolve, reject) => {
+    entry.file(resolve, reject);
+  });
+}
+
+async function collectEntryFiles(
+  entry: FileSystemEntryLike,
+  parentPath = ""
+): Promise<UploadCandidate[]> {
+  const path = parentPath ? `${parentPath}/${entry.name}` : entry.name;
+
+  if (entry.isFile) {
+    const file = await readFileEntry(entry as FileSystemFileEntryLike);
+
+    return [
+      {
+        file,
+        title: path
+      }
+    ];
+  }
+
+  if (!entry.isDirectory) {
+    return [];
+  }
+
+  const reader = (entry as FileSystemDirectoryEntryLike).createReader();
+  const children = await readDirectoryEntries(reader);
+  const nested = await Promise.all(children.map((child) => collectEntryFiles(child, path)));
+
+  return nested.flat();
+}
+
+async function collectDroppedFiles(dataTransfer: DataTransfer): Promise<UploadCandidate[]> {
+  const itemEntries: FileSystemEntryLike[] = [];
+
+  for (const item of Array.from(dataTransfer.items)) {
+    const entry = (item as DataTransferItem & {
+      webkitGetAsEntry?: () => FileSystemEntryLike | null;
+    }).webkitGetAsEntry?.() ?? null;
+
+    if (entry) {
+      itemEntries.push(entry);
+    }
+  }
+
+  if (itemEntries.length > 0) {
+    const nested = await Promise.all(itemEntries.map((entry) => collectEntryFiles(entry)));
+    return nested.flat();
+  }
+
+  return Array.from(dataTransfer.files).map((file) => fileToUploadCandidate(file as UploadableFile));
+}
+
 export function UploadConsole() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
@@ -183,6 +299,7 @@ export function UploadConsole() {
   const [isLoading, setIsLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
+  const [isDraggingUpload, setIsDraggingUpload] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const documentUrl = bootstrap
@@ -280,7 +397,7 @@ export function UploadConsole() {
     }
   }
 
-  async function uploadFiles(files: FileList | File[]) {
+  async function uploadFiles(files: FileList | File[] | UploadCandidate[]) {
     if (!documentUrl || !files.length) {
       return;
     }
@@ -289,27 +406,57 @@ export function UploadConsole() {
       setIsUploading(true);
       setError(null);
 
-      for (const file of Array.from(files) as UploadableFile[]) {
+      const candidates = Array.from(files as ArrayLike<File | UploadCandidate>).map(
+        (item): UploadCandidate =>
+          item instanceof File ? fileToUploadCandidate(item as UploadableFile) : item
+      );
+      const skipped: string[] = [];
+
+      for (const candidate of candidates) {
         const formData = new FormData();
-        formData.set("file", file);
-        formData.set("title", file.webkitRelativePath?.trim() || file.name);
+        formData.set("file", candidate.file);
+        formData.set("title", candidate.title);
         formData.set("ingestionMode", "standard");
 
-        await parseJson(
-          await fetch(`${documentUrl}/upload`, {
-            method: "POST",
-            body: formData
-          })
-        );
+        const response = await fetch(`${documentUrl}/upload`, {
+          method: "POST",
+          body: formData
+        });
+
+        if (response.status === 409) {
+          skipped.push(candidate.title);
+          continue;
+        }
+
+        await parseJson(response);
       }
 
       await refreshDocuments();
-      void runNextJob();
+
+      if (skipped.length > 0) {
+        setError(
+          skipped.length === candidates.length
+            ? "All selected files were already uploaded."
+            : `Skipped ${skipped.length} duplicate file(s).`
+        );
+      }
+
+      if (skipped.length < candidates.length) {
+        void runNextJob();
+      }
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Failed to upload documents.");
     } finally {
       setIsUploading(false);
     }
+  }
+
+  async function handleDrop(event: DragEvent<HTMLElement>) {
+    event.preventDefault();
+    setIsDraggingUpload(false);
+
+    const droppedFiles = await collectDroppedFiles(event.dataTransfer);
+    await uploadFiles(droppedFiles);
   }
 
   async function reprocessDocument(document: DocumentRow) {
@@ -415,6 +562,50 @@ export function UploadConsole() {
           }
         }}
       />
+
+      <section
+        className={`upload-drop-zone${isDraggingUpload ? " dragging" : ""}`}
+        aria-label="Upload documents"
+        onDragEnter={(event) => {
+          event.preventDefault();
+          setIsDraggingUpload(true);
+        }}
+        onDragOver={(event) => {
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "copy";
+          setIsDraggingUpload(true);
+        }}
+        onDragLeave={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+            setIsDraggingUpload(false);
+          }
+        }}
+        onDrop={(event) => {
+          void handleDrop(event);
+        }}
+      >
+        <div className="upload-drop-icon">
+          <FolderUp aria-hidden="true" />
+        </div>
+        <div>
+          <h2>{isUploading ? "Uploading documents" : "Drop documents, folders, or zip files"}</h2>
+          <p>Files are checked before ingestion, so duplicates are skipped instead of queued.</p>
+        </div>
+        <div className="upload-drop-actions">
+          <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isUploading}>
+            <Upload aria-hidden="true" />
+            <span>Files</span>
+          </button>
+          <button type="button" onClick={() => folderInputRef.current?.click()} disabled={isUploading}>
+            <FolderUp aria-hidden="true" />
+            <span>Folder</span>
+          </button>
+          <span className="upload-drop-zip">
+            <FileArchive aria-hidden="true" />
+            <span>Zip</span>
+          </span>
+        </div>
+      </section>
 
       {error ? <p className="upload-console-error">{error}</p> : null}
 

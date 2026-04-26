@@ -360,6 +360,101 @@ h1 {
   font-size: 0.92rem;
 }
 
+.upload-drop-zone {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  max-width: 1180px;
+  margin: 0 auto 18px;
+  padding: 18px;
+  border: 1px dashed rgba(16, 82, 224, 0.34);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.04);
+  transition:
+    border-color 140ms ease,
+    background 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.upload-drop-zone.dragging {
+  border-color: var(--accent-strong);
+  background: #eef4ff;
+  box-shadow: 0 14px 36px rgba(16, 82, 224, 0.12);
+}
+
+.upload-drop-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.upload-drop-icon svg {
+  width: 24px;
+  height: 24px;
+}
+
+.upload-drop-zone h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  letter-spacing: 0;
+}
+
+.upload-drop-zone p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.upload-drop-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.upload-drop-actions button,
+.upload-drop-zip {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 11px;
+  border: 1px solid rgba(16, 82, 224, 0.18);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.upload-drop-actions button {
+  cursor: pointer;
+}
+
+.upload-drop-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.upload-drop-actions svg {
+  width: 16px;
+  height: 16px;
+}
+
+.upload-drop-zip {
+  color: var(--muted);
+}
+
 .upload-console-summary {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -559,6 +654,15 @@ h1 {
   .upload-console-actions {
     justify-content: flex-start;
     margin-top: 14px;
+  }
+
+  .upload-drop-zone {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  .upload-drop-actions {
+    justify-content: flex-start;
   }
 
   .upload-console-summary {
