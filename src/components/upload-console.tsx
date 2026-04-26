@@ -1025,6 +1025,10 @@ export function UploadConsole() {
       </section>
 
       <section className="upload-console-table" aria-label="Documents">
+        <div className="upload-document-list-header">
+          <strong>Documents</strong>
+          <span>{documents.length} total</span>
+        </div>
         {isLoading ? (
           <div className="upload-console-empty">Loading documents...</div>
         ) : documents.length === 0 ? (
