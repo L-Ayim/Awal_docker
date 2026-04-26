@@ -6,6 +6,11 @@ import {
   refreshGpuRuntimeState
 } from "@/lib/gpu-runtime";
 
+function numberEnv(name: string, fallback: number) {
+  const parsed = Number(process.env[name]);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 export async function GET() {
   try {
     const cachedRuntime = await getGpuRuntimeState();
@@ -21,6 +26,11 @@ export async function GET() {
     return NextResponse.json({
       ok: true,
       automationEnabled: isGpuRuntimeAutomationEnabled(),
+      idleMinutes: numberEnv("RUNPOD_IDLE_MINUTES", 45),
+      ingestIdleMinutes: numberEnv(
+        "RUNPOD_INGEST_IDLE_MINUTES",
+        numberEnv("RUNPOD_IDLE_MINUTES", 45)
+      ),
       staticEndpoints: getGpuRuntimeStaticEndpoints(),
       runtime,
       runtimes: {

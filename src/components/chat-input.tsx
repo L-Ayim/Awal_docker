@@ -16,6 +16,9 @@ type ChatInputProps = {
     status: "asleep" | "waking" | "ready" | "stopping" | "failed";
     podId: string | null;
     podName: string | null;
+    lastRequestAt: string | null;
+    lastHealthAt: string | null;
+    idleMinutes: number;
     lastError: string | null;
   } | null;
   queuedMessages: QueuedComposerMessage[];

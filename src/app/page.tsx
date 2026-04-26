@@ -14,6 +14,7 @@ export default function HomePage() {
     setActiveSessionId,
     isBootstrapping,
     isSending,
+    isWakingRuntime,
     gpuRuntime,
     queuedMessages,
     error,
@@ -21,6 +22,7 @@ export default function HomePage() {
     deleteSession,
     updateSessionTitle,
     sendMessage,
+    wakeRuntime,
     stopSending,
     updateQueuedMessage,
     deleteQueuedMessage
@@ -77,6 +79,8 @@ export default function HomePage() {
           <ChatHeader
             title={activeTitle}
             gpuRuntime={gpuRuntime}
+            isWakingRuntime={isWakingRuntime}
+            onWakeRuntime={() => void wakeRuntime()}
             onOpenSidebar={() => setSidebarOpen(true)}
             isSidebarCollapsed={sidebarCollapsed}
             onToggleSidebarCollapsed={() => setSidebarCollapsed((current) => !current)}

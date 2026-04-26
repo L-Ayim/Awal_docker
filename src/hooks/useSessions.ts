@@ -100,6 +100,9 @@ type GpuRuntimeSnapshot = {
   status: GpuRuntimeStatus;
   podId: string | null;
   podName: string | null;
+  lastRequestAt: string | null;
+  lastHealthAt: string | null;
+  idleMinutes: number;
   lastError: string | null;
 } | null;
 
@@ -202,6 +205,7 @@ export function useSessions() {
   const [error, setError] = useState<string | null>(null);
   const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([]);
   const [gpuRuntime, setGpuRuntime] = useState<GpuRuntimeSnapshot>(null);
+  const [isWakingRuntime, setIsWakingRuntime] = useState(false);
   const activeRequestRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -638,10 +642,13 @@ export function useSessions() {
       try {
         const data = await parseJson<{
           automationEnabled: boolean;
+          idleMinutes: number;
           runtime: {
             status: GpuRuntimeStatus;
             podId: string | null;
             podName: string | null;
+            lastRequestAt: string | null;
+            lastHealthAt: string | null;
             lastError: string | null;
           };
         }>(
@@ -656,6 +663,9 @@ export function useSessions() {
             status: data.runtime.status,
             podId: data.runtime.podId,
             podName: data.runtime.podName,
+            lastRequestAt: data.runtime.lastRequestAt,
+            lastHealthAt: data.runtime.lastHealthAt,
+            idleMinutes: data.idleMinutes,
             lastError: data.runtime.lastError
           });
         }
@@ -677,6 +687,42 @@ export function useSessions() {
 
   const stopSending = () => {
     activeRequestRef.current?.abort();
+  };
+
+  const wakeRuntime = async () => {
+    try {
+      setIsWakingRuntime(true);
+      setError(null);
+      const data = await parseJson<{
+        runtime: {
+          status: GpuRuntimeStatus;
+          podId: string | null;
+          podName: string | null;
+          lastRequestAt: string | null;
+          lastHealthAt: string | null;
+          lastError: string | null;
+        };
+      }>(
+        await fetch("/api/v1/gpu-runtime/wake-ui", {
+          method: "POST"
+        })
+      );
+
+      setGpuRuntime((current) => ({
+        automationEnabled: current?.automationEnabled ?? true,
+        status: data.runtime.status,
+        podId: data.runtime.podId,
+        podName: data.runtime.podName,
+        lastRequestAt: data.runtime.lastRequestAt,
+        lastHealthAt: data.runtime.lastHealthAt,
+        idleMinutes: current?.idleMinutes ?? 45,
+        lastError: data.runtime.lastError
+      }));
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Failed to wake runtime.");
+    } finally {
+      setIsWakingRuntime(false);
+    }
   };
 
   const updateQueuedMessage = (id: string, content: string) => {
@@ -735,6 +781,7 @@ export function useSessions() {
     bootstrap,
     isBootstrapping,
     isSending,
+    isWakingRuntime,
     isUploading,
     queuedMessages,
     gpuRuntime,
@@ -743,6 +790,7 @@ export function useSessions() {
     deleteSession,
     updateSessionTitle,
     sendMessage,
+    wakeRuntime,
     stopSending,
     updateQueuedMessage,
     deleteQueuedMessage,
