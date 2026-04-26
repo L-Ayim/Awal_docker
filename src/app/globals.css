@@ -461,7 +461,7 @@ h1 {
   flex: 0 0 auto;
   align-items: center;
   gap: 18px;
-  margin: 18px 28px;
+  margin: 18px 28px 14px;
   padding: 18px;
   border: 1px dashed rgba(16, 82, 224, 0.34);
   border-radius: 8px;
@@ -554,7 +554,7 @@ h1 {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
-  margin: 0 28px 18px;
+  margin: 0 28px 14px;
 }
 
 .upload-console-summary div {

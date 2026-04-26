@@ -962,6 +962,50 @@ export function UploadConsole() {
 
       {error ? <p className="upload-console-error">{error}</p> : null}
 
+      <section
+        className={`upload-drop-zone${isDraggingUpload ? " dragging" : ""}`}
+        aria-label="Upload documents"
+        onDragEnter={(event) => {
+          event.preventDefault();
+          setIsDraggingUpload(true);
+        }}
+        onDragOver={(event) => {
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "copy";
+          setIsDraggingUpload(true);
+        }}
+        onDragLeave={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+            setIsDraggingUpload(false);
+          }
+        }}
+        onDrop={(event) => {
+          void handleDrop(event);
+        }}
+      >
+        <div className="upload-drop-icon">
+          <FolderUp aria-hidden="true" />
+        </div>
+        <div>
+          <h2>{isUploading ? "Uploading documents" : "Drop documents, folders, or zip files"}</h2>
+          <p>Files are checked before ingestion, so duplicates are skipped instead of queued.</p>
+        </div>
+        <div className="upload-drop-actions">
+          <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isUploading}>
+            <Upload aria-hidden="true" />
+            <span>Files</span>
+          </button>
+          <button type="button" onClick={() => folderInputRef.current?.click()} disabled={isUploading}>
+            <FolderUp aria-hidden="true" />
+            <span>Folder</span>
+          </button>
+          <span className="upload-drop-zip">
+            <FileArchive aria-hidden="true" />
+            <span>Zip</span>
+          </span>
+        </div>
+      </section>
+
       <section className="upload-console-summary" aria-label="Document summary">
         <div>
           <strong>{documents.length}</strong>
@@ -1126,50 +1170,6 @@ export function UploadConsole() {
             );
           })
         )}
-      </section>
-
-      <section
-        className={`upload-drop-zone${isDraggingUpload ? " dragging" : ""}`}
-        aria-label="Upload documents"
-        onDragEnter={(event) => {
-          event.preventDefault();
-          setIsDraggingUpload(true);
-        }}
-        onDragOver={(event) => {
-          event.preventDefault();
-          event.dataTransfer.dropEffect = "copy";
-          setIsDraggingUpload(true);
-        }}
-        onDragLeave={(event) => {
-          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-            setIsDraggingUpload(false);
-          }
-        }}
-        onDrop={(event) => {
-          void handleDrop(event);
-        }}
-      >
-        <div className="upload-drop-icon">
-          <FolderUp aria-hidden="true" />
-        </div>
-        <div>
-          <h2>{isUploading ? "Uploading documents" : "Drop documents, folders, or zip files"}</h2>
-          <p>Files are checked before ingestion, so duplicates are skipped instead of queued.</p>
-        </div>
-        <div className="upload-drop-actions">
-          <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isUploading}>
-            <Upload aria-hidden="true" />
-            <span>Files</span>
-          </button>
-          <button type="button" onClick={() => folderInputRef.current?.click()} disabled={isUploading}>
-            <FolderUp aria-hidden="true" />
-            <span>Folder</span>
-          </button>
-          <span className="upload-drop-zip">
-            <FileArchive aria-hidden="true" />
-            <span>Zip</span>
-          </span>
-        </div>
       </section>
         </section>
       </section>
