@@ -569,7 +569,7 @@ async function withRuntimeWakeLock<T>(kind: GpuRuntimeKind, callback: () => Prom
 
   return prisma.$transaction(
     async (tx) => {
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(${lockId})`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${lockId})`;
       return callback();
     },
     {
