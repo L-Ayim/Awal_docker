@@ -603,11 +603,13 @@ export async function POST(request: Request, context: RouteContext) {
         }
       });
 
+      const generatedAnswer =
+        generated?.provider === "vast-openai-compatible" ? generated : null;
       const assistantContent =
-        generated?.provider === "vast-openai-compatible"
+        generatedAnswer
           ? renderStructuredAnswer({
-              lead: generated.lead,
-              bullets: generated.bullets,
+              lead: generatedAnswer.lead,
+              bullets: generatedAnswer.bullets,
               matches: rankedMatches.map((match) => ({
                 documentTitle: match.documentTitle,
                 pageStart: match.pageStart,
@@ -622,11 +624,13 @@ export async function POST(request: Request, context: RouteContext) {
             ? "I don't have any ready documents in this collection yet. Upload and process a document first, then ask again."
           : rankedMatches.length === 0
             ? "I couldn't find grounded evidence for that question in the documents I have ready right now."
-            : "Awal is offline right now.";
+            : generationFailureReason
+              ? "Awal could not finish starting the 32B runtime for this request. Please try again in a moment."
+              : "Awal could not generate an answer for this request. Please try again in a moment.";
 
       const assistantState =
-        generated?.provider === "vast-openai-compatible"
-          ? generated.answerState
+        generatedAnswer
+          ? generatedAnswer.answerState
           : readyDocuments.length === 0
             ? "ingestion_pending"
           : rankedMatches.length === 0
@@ -650,8 +654,8 @@ export async function POST(request: Request, context: RouteContext) {
             generated?.modelName ??
             (aiConfig.hasGenerationProvider ? aiConfig.llmModel : null),
           refusalReason:
-            generated?.provider === "vast-openai-compatible"
-              ? generated.answerState === "insufficient_evidence"
+            generatedAnswer
+              ? generatedAnswer.answerState === "insufficient_evidence"
                 ? "model_reported_insufficient_evidence"
                 : null
             : readyDocuments.length === 0
@@ -666,10 +670,10 @@ export async function POST(request: Request, context: RouteContext) {
 
       if (rankedMatches.length > 0) {
         const usedEvidenceIds =
-          generated?.provider === "vast-openai-compatible"
+          generatedAnswer
             ? collectUsedEvidenceIds({
-                lead: generated.lead,
-                bullets: generated.bullets
+                lead: generatedAnswer.lead,
+                bullets: generatedAnswer.bullets
               })
             : [];
         const selectedEvidenceSet = new Set(usedEvidenceIds);
@@ -699,21 +703,19 @@ export async function POST(request: Request, context: RouteContext) {
               hybridScore: match.hybridScore,
               rerankScore: match.rerankScore,
               finalRank: index + 1,
-              selected:
-                generated?.provider === "vast-openai-compatible"
-                  ? selectedEvidenceSet.has(index + 1)
-                  : true
+              selected: generatedAnswer ? selectedEvidenceSet.has(index + 1) : false
             }
           });
         }
 
-        const citationEvidenceIds =
-          usedEvidenceIds.length > 0
+        const citationEvidenceIds = generatedAnswer
+          ? usedEvidenceIds.length > 0
             ? usedEvidenceIds
             : buildFallbackEvidenceIds({
-                generated,
+                generated: generatedAnswer,
                 matchCount: rankedMatches.length
-              });
+              })
+          : [];
 
         for (const evidenceId of citationEvidenceIds) {
           const match = rankedMatches[evidenceId - 1];
@@ -736,24 +738,6 @@ export async function POST(request: Request, context: RouteContext) {
           });
         }
 
-        for (const [index, match] of rankedMatches.entries()) {
-          if (generated?.provider === "vast-openai-compatible") {
-            continue;
-          }
-
-          const citationSpanId = await ensureCitationSpan({
-            tx,
-            match
-          });
-
-          await tx.answerCitation.create({
-            data: {
-              answerRecordId: answerRecord.id,
-              citationSpanId,
-              citationOrder: index + 1
-            }
-          });
-        }
       }
 
       return { userMessage, assistantMessage, answerRecord };
