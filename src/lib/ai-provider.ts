@@ -84,8 +84,18 @@ const memoryObjectResponseSchema = z.object({
   objects: z.array(memoryObjectSchema).max(32).default([])
 });
 
+const looseMemoryObjectSchema = z.object({
+  chunkIndex: z.unknown().optional(),
+  kind: z.unknown().optional(),
+  title: z.unknown().optional(),
+  body: z.unknown().optional(),
+  summary: z.unknown().optional(),
+  tags: z.unknown().optional(),
+  aliases: z.unknown().optional()
+});
+
 const looseMemoryObjectResponseSchema = z.object({
-  objects: z.array(memoryObjectSchema.partial()).max(32).default([])
+  objects: z.array(looseMemoryObjectSchema).max(32).default([])
 });
 
 function trimTrailingSlash(value: string) {
@@ -486,20 +496,41 @@ function normalizeGeneratedMemoryObjects(content: string) {
   return {
     objects: parsed.objects
       .map((object) => {
+        const rawChunkIndex =
+          typeof object.chunkIndex === "number"
+            ? object.chunkIndex
+            : typeof object.chunkIndex === "string"
+              ? Number.parseInt(object.chunkIndex, 10)
+              : Number.NaN;
         const body = String(object.body || object.summary || object.title || "").trim();
         const summary = String(object.summary || body || object.title || "").trim();
+        const title = String(object.title || summary || body).trim();
+        const kind = String(object.kind || "observation").trim();
+        const tags = Array.isArray(object.tags)
+          ? object.tags.map((tag) => String(tag).trim()).filter(Boolean)
+          : [];
+        const aliases = Array.isArray(object.aliases)
+          ? object.aliases.map((alias) => String(alias).trim()).filter(Boolean)
+          : [];
 
         return {
-          chunkIndex: object.chunkIndex,
-          kind: object.kind,
-          title: object.title,
+          chunkIndex: rawChunkIndex,
+          kind,
+          title,
           body,
           summary,
-          tags: object.tags || [],
-          aliases: object.aliases || []
+          tags,
+          aliases
         };
       })
-      .filter((object) => object.body.length >= 12 && object.summary.length >= 8)
+      .filter((object) => (
+        Number.isInteger(object.chunkIndex) &&
+        object.chunkIndex >= 0 &&
+        object.kind.length >= 2 &&
+        object.title.length >= 2 &&
+        object.body.length >= 12 &&
+        object.summary.length >= 8
+      ))
   };
 }
 
