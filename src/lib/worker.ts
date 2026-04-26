@@ -27,6 +27,20 @@ function chunkArray<T>(items: T[], size: number) {
   return batches;
 }
 
+function summarizeProviderFailure(error: unknown, fallback: string) {
+  const message = error instanceof Error ? error.message : fallback;
+
+  if (/502|bad gateway/i.test(message)) {
+    return "generation_runtime_unavailable";
+  }
+
+  if (/fetch failed|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|timeout/i.test(message)) {
+    return "provider_unreachable";
+  }
+
+  return message.length > 240 ? `${message.slice(0, 237).trimEnd()}...` : message;
+}
+
 async function loadRevisionText(storageUri: string | null) {
   const stored = await readStoredBytes(storageUri);
   return stored.bytes.toString("utf8");
@@ -329,6 +343,8 @@ export async function processQueuedIngestionJob() {
         for (const batch of batches) {
           const generated = await generateDocumentMemoryObjects({
             documentTitle: queuedJob.documentRevision.document.title,
+            wakeGenerationRuntime: false,
+            allowStaticGenerationProvider: false,
             chunks: batch.map((chunk) => ({
               chunkIndex: chunk.chunkIndex,
               text: chunk.text,
@@ -345,8 +361,10 @@ export async function processQueuedIngestionJob() {
           memoryObjectModelName = generated.modelName;
         }
       } catch (error) {
-        memoryObjectFailureReason =
-          error instanceof Error ? error.message : "memory_object_generation_failed";
+        memoryObjectFailureReason = summarizeProviderFailure(
+          error,
+          "memory_object_generation_failed"
+        );
       }
     }
 

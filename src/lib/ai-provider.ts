@@ -130,9 +130,17 @@ export function getAiRuntimeConfig() {
   };
 }
 
-async function getResolvedAiRuntimeConfig(params: { embeddingRuntime?: "chat" | "ingest" } = {}) {
+async function getResolvedAiRuntimeConfig(
+  params: {
+    embeddingRuntime?: "chat" | "ingest";
+    generationWakeOnDemand?: boolean;
+    allowStaticGenerationProvider?: boolean;
+  } = {}
+) {
   const config = getAiRuntimeConfig();
-  const runtime = await resolveGpuRuntimeEndpoints();
+  const runtime = await resolveGpuRuntimeEndpoints({
+    wakeOnDemand: params.generationWakeOnDemand
+  });
   const embeddingRuntime =
     params.embeddingRuntime === "ingest"
       ? await resolveGpuRuntimeEndpoints({ kind: "ingest" })
@@ -140,10 +148,14 @@ async function getResolvedAiRuntimeConfig(params: { embeddingRuntime?: "chat" | 
 
   return {
     ...config,
-    hasGenerationProvider: Boolean(runtime.llmBaseUrl) || config.hasGenerationProvider,
+    hasGenerationProvider:
+      Boolean(runtime.llmBaseUrl) ||
+      (params.allowStaticGenerationProvider === false ? false : config.hasGenerationProvider),
     hasEmbeddingProvider: Boolean(embeddingRuntime.embeddingBaseUrl) || config.hasEmbeddingProvider,
     hasRerankProvider: Boolean(runtime.rerankBaseUrl) || config.hasRerankProvider,
-    generationBaseUrl: runtime.llmBaseUrl || config.generationBaseUrl,
+    generationBaseUrl:
+      runtime.llmBaseUrl ||
+      (params.allowStaticGenerationProvider === false ? null : config.generationBaseUrl),
     embeddingBaseUrl: embeddingRuntime.embeddingBaseUrl || config.embeddingBaseUrl,
     rerankBaseUrl: runtime.rerankBaseUrl || config.rerankBaseUrl
   };
@@ -1118,6 +1130,8 @@ export async function generateGroundedAnswer(params: {
 
 export async function generateDocumentMemoryObjects(params: {
   documentTitle: string;
+  wakeGenerationRuntime?: boolean;
+  allowStaticGenerationProvider?: boolean;
   chunks: Array<{
     chunkIndex: number;
     text: string;
@@ -1129,7 +1143,10 @@ export async function generateDocumentMemoryObjects(params: {
     lineEnd: number | null;
   }>;
 }) {
-  const config = await getResolvedAiRuntimeConfig();
+  const config = await getResolvedAiRuntimeConfig({
+    generationWakeOnDemand: params.wakeGenerationRuntime,
+    allowStaticGenerationProvider: params.allowStaticGenerationProvider
+  });
 
   if (!config.hasGenerationProvider || !config.generationBaseUrl || params.chunks.length === 0) {
     return {
