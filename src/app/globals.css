@@ -922,6 +922,7 @@ h1 {
   }
 
   .upload-console-table {
+    flex: 0 0 auto;
     overflow: visible;
     padding: 0 18px 14px;
   }
