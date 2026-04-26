@@ -14,7 +14,7 @@ import {
 import { buildPdfCitationIndex, locateChunkInPdf } from "@/lib/pdf-citations";
 import { readStoredBytes } from "@/lib/storage";
 
-const MEMORY_OBJECT_BATCH_SIZE = 6;
+const MEMORY_OBJECT_BATCH_SIZE = 3;
 const DEFAULT_MAX_INGESTION_JOBS = 25;
 
 function chunkArray<T>(items: T[], size: number) {

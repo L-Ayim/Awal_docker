@@ -1202,7 +1202,7 @@ export async function generateDocumentMemoryObjects(params: {
         "Chunks:",
         chunkPayload,
         "",
-        'Return JSON with shape: {"objects":[{"chunkIndex":0,"kind":"...","title":"...","body":"...","summary":"...","tags":["..."],"aliases":["..."]}]}',
+        'Return exactly one JSON object with this shape and no surrounding prose: {"objects":[{"chunkIndex":0,"kind":"...","title":"...","body":"...","summary":"...","tags":["..."],"aliases":["..."]}]}',
         "",
         "Rules:",
         "- Extract up to 4 memory objects per chunk.",
@@ -1234,11 +1234,12 @@ export async function generateDocumentMemoryObjects(params: {
         apiKey: config.generationApiKey,
         model: config.llmModel,
         messages,
-        requireJsonMode
+        requireJsonMode,
+        maxTokens: 2400
       });
 
       const content = sanitizeGeneratedAnswer(json.choices?.[0]?.message?.content || "");
-      parsed = memoryObjectResponseSchema.parse(JSON.parse(extractJsonObject(content)));
+      parsed = memoryObjectResponseSchema.parse(parseJsonObjectLenient(content));
       lastError = null;
       break;
     } catch (error) {
