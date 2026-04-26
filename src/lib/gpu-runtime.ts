@@ -335,15 +335,6 @@ function buildChatStartScript(profile: RuntimeProfile) {
   const repoUrl = process.env.REPO_URL || "https://github.com/L-Ayim/Awal_docker.git";
   const qwenProfile = process.env.QWEN_PROFILE || "32b";
 
-  if (profile.mode === "vllm") {
-    return [
-      "set -euo pipefail",
-      "mkdir -p /workspace/Awal /workspace/logs /workspace/.cache/huggingface",
-      `if [ -d /opt/awal/deploy/runpod ]; then rsync -a --delete --exclude .git /opt/awal/ /workspace/Awal/; elif [ -d /workspace/Awal/.git ]; then git -C /workspace/Awal pull --ff-only; else rm -rf /workspace/Awal && git clone "${repoUrl.replace(/"/g, '\\"')}" /workspace/Awal; fi`,
-      `cd /workspace/Awal && API_KEY="$${"VLLM_API_KEY"}" HF_HOME="$${"HF_HOME"}" bash /workspace/Awal/deploy/runpod/vllm/run-qwen3.sh "${qwenProfile.replace(/"/g, '\\"')}"`
-    ].join(" && ");
-  }
-
   return [
     "set -euo pipefail",
     "mkdir -p /workspace",
@@ -367,11 +358,68 @@ function buildRuntimeStartScript(profile: RuntimeProfile) {
   return profile.kind === "ingest" ? buildIngestStartScript() : buildChatStartScript(profile);
 }
 
+function getQwenVllmDefaults() {
+  const profile = process.env.QWEN_PROFILE || "32b";
+
+  switch (profile) {
+    case "8b":
+      return {
+        modelName: "Qwen/Qwen3-8B",
+        maxModelLen: "4096",
+        gpuMemoryUtilization: "0.75"
+      };
+    case "14b":
+      return {
+        modelName: "Qwen/Qwen3-14B",
+        maxModelLen: "4096",
+        gpuMemoryUtilization: "0.82"
+      };
+    default:
+      return {
+        modelName: "Qwen/Qwen3-32B",
+        maxModelLen: "8192",
+        gpuMemoryUtilization: "0.88"
+      };
+  }
+}
+
+function buildVllmDockerArgsArray() {
+  const defaults = getQwenVllmDefaults();
+
+  return [
+    "--model",
+    process.env.MODEL_NAME || defaults.modelName,
+    "--host",
+    "0.0.0.0",
+    "--port",
+    "8000",
+    "--api-key",
+    process.env.VLLM_API_KEY || process.env.VAST_OPENAI_API_KEY || "awal-runpod-key",
+    "--dtype",
+    "auto",
+    "--generation-config",
+    "vllm",
+    "--enforce-eager",
+    "--max-model-len",
+    process.env.MAX_MODEL_LEN || defaults.maxModelLen,
+    "--gpu-memory-utilization",
+    process.env.GPU_MEMORY_UTILIZATION || defaults.gpuMemoryUtilization
+  ];
+}
+
 function buildDockerStartCmd(profile: RuntimeProfile) {
+  if (profile.mode === "vllm") {
+    return buildVllmDockerArgsArray();
+  }
+
   return ["bash", "-lc", buildRuntimeStartScript(profile)];
 }
 
 function buildDockerArgs(profile: RuntimeProfile) {
+  if (profile.mode === "vllm") {
+    return buildVllmDockerArgsArray().join(" ");
+  }
+
   return `bash -lc ${JSON.stringify(buildRuntimeStartScript(profile))}`;
 }
 
