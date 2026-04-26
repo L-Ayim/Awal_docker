@@ -75,7 +75,7 @@ export function ChatSidebar({
           <span>New Chat</span>
         </button>
 
-        <Link className="sidebar-library-link" href="/library" title="Library">
+        <Link className="sidebar-library-link" href="/library" title="Library" onClick={onClose}>
           <Library aria-hidden="true" />
           <span>Library</span>
         </Link>

@@ -141,6 +141,18 @@ type DocumentDetail = {
 };
 
 type DocumentsResponse = {
+  pagination: {
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+  };
+  summary: {
+    total: number;
+    ready: number;
+    working: number;
+    failed: number;
+  };
   documents: DocumentRow[];
 };
 
@@ -524,26 +536,41 @@ export function UploadConsole() {
   const [isWakingIngestRuntime, setIsWakingIngestRuntime] = useState(false);
   const [isStoppingIngestRuntime, setIsStoppingIngestRuntime] = useState(false);
   const [isDraggingUpload, setIsDraggingUpload] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState({
+    page: 1,
+    pageSize: 25,
+    total: 0,
+    totalPages: 1
+  });
+  const [summary, setSummary] = useState({
+    total: 0,
+    ready: 0,
+    working: 0,
+    failed: 0
+  });
   const [error, setError] = useState<string | null>(null);
 
   const documentUrl = bootstrap
     ? `/api/v1/workspaces/${bootstrap.workspace.id}/collections/${bootstrap.collection.id}/documents`
     : null;
-  const readyCount = documents.filter(
-    (document) => statusLabel(document) === "completed" || document.status === "ready"
-  ).length;
-  const workingCount = documents.filter((document) =>
-    ["queued", "processing", "uploaded"].includes(statusLabel(document))
-  ).length;
-  const failedCount = documents.filter((document) => statusLabel(document) === "failed").length;
+  const readyCount = summary.ready;
+  const workingCount = summary.working;
+  const failedCount = summary.failed;
 
   async function refreshDocuments() {
     if (!documentUrl) {
       return;
     }
 
-    const payload = await parseJson<DocumentsResponse>(await fetch(documentUrl));
+    const payload = await parseJson<DocumentsResponse>(
+      await fetch(`${documentUrl}?page=${page}&pageSize=${pagination.pageSize}`, {
+        cache: "no-store"
+      })
+    );
     setDocuments(payload.documents);
+    setPagination(payload.pagination);
+    setSummary(payload.summary);
   }
 
   async function refreshIngestRuntime() {
@@ -621,7 +648,7 @@ export function UploadConsole() {
     }, 8000);
 
     return () => window.clearInterval(id);
-  }, [documentUrl]);
+  }, [documentUrl, page, pagination.pageSize]);
 
   useEffect(() => {
     let alive = true;
@@ -786,6 +813,7 @@ export function UploadConsole() {
       }
 
       if (skipped.length < candidates.length) {
+        setPage(1);
         void runNextJob();
       }
     } catch (nextError) {
@@ -881,7 +909,7 @@ export function UploadConsole() {
             <span className="sidebar-label">Library</span>
             <div className="upload-sidebar-stats">
               <div>
-                <strong>{documents.length}</strong>
+                <strong>{summary.total}</strong>
                 <span>Documents</span>
               </div>
               <div>
@@ -914,22 +942,10 @@ export function UploadConsole() {
                 onSleep={() => void sleepIngestRuntime()}
                 onRefresh={() => void refreshIngestRuntime().catch(() => undefined)}
               />
-              <div className="upload-console-actions">
-                <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isUploading}>
-                  <Upload aria-hidden="true" />
-                  <span>{isUploading ? "Adding" : "Add files"}</span>
-                </button>
-                <button type="button" onClick={() => folderInputRef.current?.click()} disabled={isUploading}>
-                  <FolderUp aria-hidden="true" />
-                  <span>Add folder</span>
-                </button>
+              <div className="upload-console-actions compact">
                 <button type="button" onClick={() => void runNextJob()} disabled={isRunning}>
                   <Play aria-hidden="true" />
                   <span>{isRunning ? "Running" : "Run queue"}</span>
-                </button>
-                <button type="button" onClick={() => void refreshDocuments()} disabled={!documentUrl}>
-                  <RefreshCw aria-hidden="true" />
-                  <span>Refresh</span>
                 </button>
               </div>
             </div>
@@ -1008,25 +1024,33 @@ export function UploadConsole() {
         </div>
       </section>
 
-      <section className="upload-console-summary" aria-label="Document summary">
-        <div>
-          <strong>{documents.length}</strong>
-          <span>Documents</span>
-        </div>
-        <div>
-          <strong>{readyCount}</strong>
-          <span>Ready</span>
-        </div>
-        <div>
-          <strong>{workingCount}</strong>
-          <span>Working</span>
-        </div>
-      </section>
-
       <section className="upload-console-table" aria-label="Documents">
         <div className="upload-document-list-header">
           <strong>Documents</strong>
-          <span>{documents.length} total</span>
+          <div className="upload-document-list-tools">
+            <span>
+              {pagination.total === 0
+                ? "0 total"
+                : `${(pagination.page - 1) * pagination.pageSize + 1}-${Math.min(
+                    pagination.page * pagination.pageSize,
+                    pagination.total
+                  )} of ${pagination.total}`}
+            </span>
+            <button
+              type="button"
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+              disabled={pagination.page <= 1}
+            >
+              Previous
+            </button>
+            <button
+              type="button"
+              onClick={() => setPage((current) => Math.min(pagination.totalPages, current + 1))}
+              disabled={pagination.page >= pagination.totalPages}
+            >
+              Next
+            </button>
+          </div>
         </div>
         {isLoading ? (
           <div className="upload-console-empty">Loading documents...</div>

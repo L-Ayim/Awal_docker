@@ -104,11 +104,18 @@ export async function POST(request: Request, context: RouteContext) {
   }
 }
 
-export async function GET(_: Request, context: RouteContext) {
+export async function GET(request: Request, context: RouteContext) {
   try {
     const { getPrisma } = await import("@/lib/prisma");
     const prisma = getPrisma();
     const { workspaceId, collectionId } = await context.params;
+    const searchParams = new URL(request.url).searchParams;
+    const page = Math.max(1, Number.parseInt(searchParams.get("page") || "1", 10) || 1);
+    const pageSize = Math.max(
+      10,
+      Math.min(100, Number.parseInt(searchParams.get("pageSize") || "25", 10) || 25)
+    );
+    const skip = (page - 1) * pageSize;
     const collection = await prisma.collection.findFirst({
       where: {
         id: collectionId,
@@ -123,38 +130,59 @@ export async function GET(_: Request, context: RouteContext) {
       return notFound("Collection not found for the given workspace.");
     }
 
-    const documents = await prisma.document.findMany({
-      where: {
-        workspaceId,
-        collectionId,
-        status: {
-          not: "archived"
-        }
-      },
-      orderBy: {
-        updatedAt: "desc"
-      },
-      include: {
-        latestRevision: {
-          include: {
-            ingestionJobs: {
-              orderBy: {
-                createdAt: "desc"
+    const where = {
+      workspaceId,
+      collectionId,
+      status: {
+        not: "archived" as const
+      }
+    };
+    const [total, readyCount, workingCount, failedCount, documents] = await prisma.$transaction([
+      prisma.document.count({ where }),
+      prisma.document.count({ where: { ...where, status: "ready" } }),
+      prisma.document.count({ where: { ...where, status: { in: ["uploaded", "processing"] } } }),
+      prisma.document.count({ where: { ...where, status: "failed" } }),
+      prisma.document.findMany({
+        where,
+        orderBy: {
+          updatedAt: "desc"
+        },
+        skip,
+        take: pageSize,
+        include: {
+          latestRevision: {
+            include: {
+              ingestionJobs: {
+                orderBy: {
+                  createdAt: "desc"
+                },
+                take: 1
               },
-              take: 1
-            },
-            _count: {
-              select: {
-                chunks: true,
-                indexCards: true
+              _count: {
+                select: {
+                  chunks: true,
+                  indexCards: true
+                }
               }
             }
           }
         }
-      }
-    });
+      })
+    ]);
 
     return ok({
+      pagination: {
+        page,
+        pageSize,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / pageSize))
+      },
+      summary: {
+        total,
+        ready: readyCount,
+        working: workingCount,
+        failed: failedCount
+      },
       documents: documents.map((document) => ({
         id: document.id,
         title: document.title,

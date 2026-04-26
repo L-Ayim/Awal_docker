@@ -397,6 +397,10 @@ h1 {
   gap: 10px;
 }
 
+.upload-console-actions.compact {
+  justify-content: flex-end;
+}
+
 .upload-console-header-side {
   display: flex;
   flex-direction: column;
@@ -599,10 +603,36 @@ h1 {
   font-size: 0.95rem;
 }
 
-.upload-document-list-header span {
+.upload-document-list-header span,
+.upload-document-list-tools span {
   color: var(--muted);
   font-size: 0.82rem;
   font-weight: 700;
+}
+
+.upload-document-list-tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.upload-document-list-tools button {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid rgba(16, 82, 224, 0.18);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.upload-document-list-tools button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
 }
 
 .upload-console-empty,
@@ -892,6 +922,10 @@ h1 {
     order: 1;
   }
 
+  .upload-console-actions.compact {
+    justify-content: flex-start;
+  }
+
   .upload-drop-zone {
     grid-template-columns: 1fr;
     align-items: start;
@@ -927,6 +961,14 @@ h1 {
     padding: 0 18px 14px;
   }
 
+  .upload-document-list-header {
+    align-items: flex-start;
+  }
+
+  .upload-document-list-tools {
+    flex-wrap: wrap;
+  }
+
   .upload-document-row {
     grid-template-columns: 36px minmax(0, 1fr);
   }
@@ -950,8 +992,7 @@ h1 {
   }
 
   .upload-console-actions {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    display: flex;
     gap: 8px;
   }
 
