@@ -458,6 +458,7 @@ h1 {
 .upload-drop-zone {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
+  flex: 0 0 auto;
   align-items: center;
   gap: 18px;
   margin: 18px 28px;
@@ -577,7 +578,7 @@ h1 {
 .upload-console-table {
   display: flex;
   flex-direction: column;
-  flex: 1 1 auto;
+  flex: 1 1 0;
   gap: 10px;
   min-height: 0;
   overflow: auto;
