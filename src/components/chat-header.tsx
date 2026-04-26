@@ -1,4 +1,4 @@
-import { Menu, PanelLeftOpen, RotateCw } from "lucide-react";
+import { Menu, PanelLeftOpen, Play, Square } from "lucide-react";
 import { useEffect, useState } from "react";
 
 type RuntimeStatus = "asleep" | "waking" | "ready" | "stopping" | "failed";
@@ -16,7 +16,9 @@ type ChatHeaderProps = {
     lastError: string | null;
   } | null;
   isWakingRuntime: boolean;
+  isStoppingRuntime: boolean;
   onWakeRuntime: () => void;
+  onSleepRuntime: () => void;
   onOpenSidebar: () => void;
   isSidebarCollapsed: boolean;
   onToggleSidebarCollapsed: () => void;
@@ -58,7 +60,9 @@ export function ChatHeader({
   title,
   gpuRuntime,
   isWakingRuntime,
+  isStoppingRuntime,
   onWakeRuntime,
+  onSleepRuntime,
   onOpenSidebar,
   isSidebarCollapsed,
   onToggleSidebarCollapsed
@@ -85,7 +89,24 @@ export function ChatHeader({
   const canWake =
     Boolean(gpuRuntime?.automationEnabled) &&
     !isWakingRuntime &&
+    !isStoppingRuntime &&
     (gpuRuntime?.status === "asleep" || gpuRuntime?.status === "failed");
+  const canSleep =
+    Boolean(gpuRuntime?.automationEnabled) &&
+    !isWakingRuntime &&
+    !isStoppingRuntime &&
+    (gpuRuntime?.status === "ready" || gpuRuntime?.status === "waking");
+  const runtimeAction = canSleep
+    ? {
+        label: "Stop RunPod runtime",
+        onClick: onSleepRuntime,
+        icon: <Square aria-hidden="true" />
+      }
+    : {
+        label: "Start RunPod runtime",
+        onClick: onWakeRuntime,
+        icon: <Play aria-hidden="true" />
+      };
   const runtimeTitle =
     gpuRuntime?.automationEnabled === false
       ? "RunPod automation is disabled"
@@ -142,12 +163,12 @@ export function ChatHeader({
           <button
             type="button"
             className="runtime-wake-button"
-            onClick={onWakeRuntime}
-            disabled={!canWake}
-            aria-label="Start RunPod runtime"
-            title="Start RunPod runtime"
+            onClick={runtimeAction.onClick}
+            disabled={!canWake && !canSleep}
+            aria-label={runtimeAction.label}
+            title={runtimeAction.label}
           >
-            <RotateCw aria-hidden="true" />
+            {runtimeAction.icon}
           </button>
         </div>
         <button

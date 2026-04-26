@@ -15,6 +15,7 @@ export default function HomePage() {
     isBootstrapping,
     isSending,
     isWakingRuntime,
+    isStoppingRuntime,
     gpuRuntime,
     queuedMessages,
     error,
@@ -23,6 +24,7 @@ export default function HomePage() {
     updateSessionTitle,
     sendMessage,
     wakeRuntime,
+    sleepRuntime,
     stopSending,
     updateQueuedMessage,
     deleteQueuedMessage
@@ -80,7 +82,9 @@ export default function HomePage() {
             title={activeTitle}
             gpuRuntime={gpuRuntime}
             isWakingRuntime={isWakingRuntime}
+            isStoppingRuntime={isStoppingRuntime}
             onWakeRuntime={() => void wakeRuntime()}
+            onSleepRuntime={() => void sleepRuntime()}
             onOpenSidebar={() => setSidebarOpen(true)}
             isSidebarCollapsed={sidebarCollapsed}
             onToggleSidebarCollapsed={() => setSidebarCollapsed((current) => !current)}

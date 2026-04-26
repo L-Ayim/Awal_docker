@@ -57,6 +57,18 @@ function formatMessageTime(timestamp: number) {
   }).format(new Date(timestamp));
 }
 
+function renderInlineMarkdown(text: string) {
+  const parts = text.split(/(\*\*[^*]+?\*\*)/g);
+
+  return parts.map((part, index) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={`inline-${index}`}>{part.slice(2, -2)}</strong>;
+    }
+
+    return part.replace(/\*\*/g, "");
+  });
+}
+
 function renderMessageContent(content: string) {
   const blocks = cleanContent(content)
     .split(/\n{2,}/)
@@ -75,13 +87,13 @@ function renderMessageContent(content: string) {
       return (
         <ul key={`block-${index}`} className="chat-message-list-block">
           {lines.map((line, lineIndex) => (
-            <li key={`line-${lineIndex}`}>{line.trimStart().slice(2)}</li>
+            <li key={`line-${lineIndex}`}>{renderInlineMarkdown(line.trimStart().slice(2))}</li>
           ))}
         </ul>
       );
     }
 
-    return <p key={`block-${index}`}>{block}</p>;
+    return <p key={`block-${index}`}>{renderInlineMarkdown(block)}</p>;
   });
 }
 

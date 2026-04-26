@@ -206,6 +206,7 @@ export function useSessions() {
   const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([]);
   const [gpuRuntime, setGpuRuntime] = useState<GpuRuntimeSnapshot>(null);
   const [isWakingRuntime, setIsWakingRuntime] = useState(false);
+  const [isStoppingRuntime, setIsStoppingRuntime] = useState(false);
   const [isCheckingRuntimeIdle, setIsCheckingRuntimeIdle] = useState(false);
   const activeRequestRef = useRef<AbortController | null>(null);
 
@@ -795,6 +796,42 @@ export function useSessions() {
     }
   };
 
+  const sleepRuntime = async () => {
+    try {
+      setIsStoppingRuntime(true);
+      setError(null);
+      const data = await parseJson<{
+        runtime: {
+          status: GpuRuntimeStatus;
+          podId: string | null;
+          podName: string | null;
+          lastRequestAt: string | null;
+          lastHealthAt: string | null;
+          lastError: string | null;
+        };
+      }>(
+        await fetch("/api/v1/gpu-runtime/sleep-ui", {
+          method: "POST"
+        })
+      );
+
+      setGpuRuntime((current) => ({
+        automationEnabled: current?.automationEnabled ?? true,
+        status: data.runtime.status,
+        podId: data.runtime.podId,
+        podName: data.runtime.podName,
+        lastRequestAt: data.runtime.lastRequestAt,
+        lastHealthAt: data.runtime.lastHealthAt,
+        idleMinutes: current?.idleMinutes ?? 5,
+        lastError: data.runtime.lastError
+      }));
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Failed to stop runtime.");
+    } finally {
+      setIsStoppingRuntime(false);
+    }
+  };
+
   const updateQueuedMessage = (id: string, content: string) => {
     setQueuedMessages((current) =>
       current.map((message) =>
@@ -852,6 +889,7 @@ export function useSessions() {
     isBootstrapping,
     isSending,
     isWakingRuntime,
+    isStoppingRuntime,
     isCheckingRuntimeIdle,
     isUploading,
     queuedMessages,
@@ -862,6 +900,7 @@ export function useSessions() {
     updateSessionTitle,
     sendMessage,
     wakeRuntime,
+    sleepRuntime,
     stopSending,
     updateQueuedMessage,
     deleteQueuedMessage,
