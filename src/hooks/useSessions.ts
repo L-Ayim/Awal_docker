@@ -206,6 +206,7 @@ export function useSessions() {
   const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([]);
   const [gpuRuntime, setGpuRuntime] = useState<GpuRuntimeSnapshot>(null);
   const [isWakingRuntime, setIsWakingRuntime] = useState(false);
+  const [isCheckingRuntimeIdle, setIsCheckingRuntimeIdle] = useState(false);
   const activeRequestRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -685,6 +686,75 @@ export function useSessions() {
     };
   }, [isSending]);
 
+  useEffect(() => {
+    if (
+      !gpuRuntime?.automationEnabled ||
+      gpuRuntime.status !== "ready" ||
+      !gpuRuntime.lastRequestAt ||
+      isSending ||
+      isCheckingRuntimeIdle
+    ) {
+      return;
+    }
+
+    const sleepAt = new Date(gpuRuntime.lastRequestAt).getTime() + gpuRuntime.idleMinutes * 60 * 1000;
+
+    if (Date.now() < sleepAt) {
+      return;
+    }
+
+    let canceled = false;
+
+    async function checkIdle() {
+      try {
+        setIsCheckingRuntimeIdle(true);
+        const data = await parseJson<{
+          runtime: {
+            status: GpuRuntimeStatus;
+            podId: string | null;
+            podName: string | null;
+            lastRequestAt: string | null;
+            lastHealthAt: string | null;
+            lastError: string | null;
+          };
+        }>(
+          await fetch("/api/v1/gpu-runtime/idle-check-ui", {
+            method: "POST"
+          })
+        );
+
+        if (!canceled) {
+          setGpuRuntime((current) => ({
+            automationEnabled: current?.automationEnabled ?? true,
+            status: data.runtime.status,
+            podId: data.runtime.podId,
+            podName: data.runtime.podName,
+            lastRequestAt: data.runtime.lastRequestAt,
+            lastHealthAt: data.runtime.lastHealthAt,
+            idleMinutes: current?.idleMinutes ?? 5,
+            lastError: data.runtime.lastError
+          }));
+        }
+      } catch {
+        if (!canceled) {
+          setGpuRuntime((current) =>
+            current ? { ...current, lastError: "Idle sleep check failed." } : current
+          );
+        }
+      } finally {
+        if (!canceled) {
+          setIsCheckingRuntimeIdle(false);
+        }
+      }
+    }
+
+    void checkIdle();
+
+    return () => {
+      canceled = true;
+    };
+  }, [gpuRuntime, isSending]);
+
   const stopSending = () => {
     activeRequestRef.current?.abort();
   };
@@ -782,6 +852,7 @@ export function useSessions() {
     isBootstrapping,
     isSending,
     isWakingRuntime,
+    isCheckingRuntimeIdle,
     isUploading,
     queuedMessages,
     gpuRuntime,

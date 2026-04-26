@@ -40,7 +40,7 @@ function getRuntimeLabel(status: RuntimeStatus) {
 
 function formatRemaining(ms: number) {
   if (ms <= 0) {
-    return "sleep due";
+    return "due now";
   }
 
   const totalMinutes = Math.ceil(ms / 60000);
@@ -69,6 +69,12 @@ export function ChatHeader({
       ? new Date(gpuRuntime.lastRequestAt).getTime() + gpuRuntime.idleMinutes * 60 * 1000
       : null;
   const remainingMs = sleepAt ? sleepAt - now : null;
+  const sleepLabel =
+    remainingMs !== null && remainingMs <= 0
+      ? "Sleep due"
+      : remainingMs !== null
+        ? `Sleeps in ${formatRemaining(remainingMs)}`
+        : null;
   const idleProgress =
     remainingMs !== null && gpuRuntime
       ? Math.max(
@@ -85,7 +91,7 @@ export function ChatHeader({
       ? "RunPod automation is disabled"
       : gpuRuntime?.podId
         ? `${getRuntimeLabel(gpuRuntime.status)}: ${gpuRuntime.podName || gpuRuntime.podId}${
-            remainingMs !== null ? `. Sleeps in ${formatRemaining(remainingMs)}.` : ""
+            sleepLabel ? `. ${sleepLabel}.` : ""
           }`
         : gpuRuntime?.lastError || getRuntimeLabel(gpuRuntime?.status ?? "asleep");
 
@@ -122,7 +128,7 @@ export function ChatHeader({
             <strong>{gpuRuntime ? getRuntimeLabel(gpuRuntime.status) : "Pod unknown"}</strong>
             <small>
               {remainingMs !== null
-                ? `Sleeps in ${formatRemaining(remainingMs)}`
+                ? sleepLabel
                 : gpuRuntime?.podId
                   ? gpuRuntime.podId.slice(0, 6)
                   : "No pod"}
