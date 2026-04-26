@@ -539,6 +539,25 @@ function cleanInlineEvidenceMarkers(content: string) {
     .trim();
 }
 
+function cleanLiveStreamingText(content: string) {
+  let next = content
+    .replace(/<think>[\s\S]*?<\/think>/gi, "")
+    .replace(/<think>[\s\S]*$/i, "")
+    .replace(/<\/?think>/gi, "")
+    .replace(/\s*\[(?:\d+(?:\s*,\s*\d+)*)]\s*/g, " ")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ");
+
+  const partialEvidenceMarker = next.match(/\s*\[(?:\d+(?:\s*,\s*\d+)*)?$/);
+
+  if (partialEvidenceMarker?.index !== undefined) {
+    next = next.slice(0, partialEvidenceMarker.index);
+  }
+
+  return next;
+}
+
 function normalizeSegment(
   segment: string | { text: string; evidenceIds?: number[] },
   matchCount: number
@@ -846,6 +865,8 @@ export async function generateStreamingGroundedAnswer(params: {
       content: buildStreamingEvidencePayload(params.query, params.matches, params.queryProfile)
     }
   ];
+  let rawStreamedText = "";
+  let visibleStreamedText = "";
 
   const streamed = await requestStreamingChatCompletion({
     baseUrl: config.generationBaseUrl,
@@ -853,7 +874,21 @@ export async function generateStreamingGroundedAnswer(params: {
     model: config.llmModel,
     messages,
     maxTokens: 850,
-    onDelta: params.onDelta
+    onDelta: async (delta) => {
+      rawStreamedText += delta;
+      const nextVisibleText = cleanLiveStreamingText(rawStreamedText);
+
+      if (!nextVisibleText.startsWith(visibleStreamedText)) {
+        return;
+      }
+
+      const visibleDelta = nextVisibleText.slice(visibleStreamedText.length);
+      visibleStreamedText = nextVisibleText;
+
+      if (visibleDelta) {
+        await params.onDelta(visibleDelta);
+      }
+    }
   });
   const sanitized = sanitizeGeneratedAnswer(streamed.content);
   const cleanedText = cleanInlineEvidenceMarkers(sanitized);
