@@ -493,6 +493,7 @@ function IngestRuntimePanel({
           title={canSleep ? "Stop ingest pod" : "Start ingest pod"}
         >
           {canSleep ? <Square aria-hidden="true" /> : <Play aria-hidden="true" />}
+          <span>{canSleep ? "Stop pod" : "Start pod"}</span>
         </button>
         <button
           type="button"
@@ -502,6 +503,7 @@ function IngestRuntimePanel({
           title="Refresh ingest pod status"
         >
           <RefreshCw aria-hidden="true" />
+          <span>Check status</span>
         </button>
       </div>
     </section>

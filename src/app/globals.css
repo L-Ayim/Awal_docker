@@ -406,7 +406,7 @@ h1 {
 }
 
 .upload-console-header-side .upload-ingest-runtime {
-  width: min(280px, 100%);
+  width: min(520px, 100%);
 }
 
 .upload-console-actions button,
@@ -1376,8 +1376,9 @@ h1 {
 }
 
 .runtime-wake-button {
-  width: 28px;
+  min-width: 0;
   height: 28px;
+  padding: 0 7px;
   border: 0;
   border-radius: 8px;
   background: transparent;
@@ -1385,6 +1386,7 @@ h1 {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 5px;
   cursor: pointer;
   flex: 0 0 auto;
 }
@@ -1401,6 +1403,13 @@ h1 {
 .runtime-wake-button svg {
   width: 15px;
   height: 15px;
+  flex: 0 0 auto;
+}
+
+.runtime-wake-button span {
+  font-size: 0.68rem;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .runtime-status-pill.ready > span {
