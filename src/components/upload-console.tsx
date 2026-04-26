@@ -193,6 +193,36 @@ type UploadProgress = {
   percent: number | null;
 };
 
+type UploadBatchStatus = "uploading" | "importing" | "queued" | "done" | "failed";
+
+type UploadBatch = {
+  id: string;
+  label: string;
+  status: UploadBatchStatus;
+  totalFiles: number;
+  uploadedFiles: number;
+  totalBytes: number;
+  uploadedBytes: number;
+  createdCount: number;
+  skippedCount: number;
+  currentFile: string | null;
+  error: string | null;
+  startedAt: number;
+  completedAt: number | null;
+};
+
+type DocumentUploadResponse = {
+  archive?: {
+    title: string;
+    fileCount: number;
+    createdCount: number;
+    skippedCount: number;
+  };
+  document?: unknown;
+  documents?: unknown[];
+  skipped?: unknown[];
+};
+
 type FileSystemEntryLike = {
   name: string;
   fullPath?: string;
@@ -396,6 +426,14 @@ function fileToUploadCandidate(file: UploadableFile): UploadCandidate {
   };
 }
 
+function summarizeUploadBatch(candidates: UploadCandidate[]) {
+  if (candidates.length === 1) {
+    return candidates[0]?.title || "1 file";
+  }
+
+  return `${candidates.length} files`;
+}
+
 function readDirectoryEntries(reader: FileSystemDirectoryReaderLike): Promise<FileSystemEntryLike[]> {
   return new Promise((resolve, reject) => {
     const entries: FileSystemEntryLike[] = [];
@@ -587,8 +625,9 @@ export function UploadConsole() {
   const [detailsById, setDetailsById] = useState<Record<string, DocumentDetail["document"] | undefined>>({});
   const [expandedIds, setExpandedIds] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isUploading, setIsUploading] = useState(false);
+  const [activeUploadCount, setActiveUploadCount] = useState(0);
   const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
+  const [uploadBatches, setUploadBatches] = useState<UploadBatch[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const [runQueueStatus, setRunQueueStatus] = useState<string | null>(null);
   const [ingestRuntime, setIngestRuntime] = useState<RuntimeSnapshot | null>(null);
@@ -616,6 +655,13 @@ export function UploadConsole() {
   const readyCount = summary.ready;
   const workingCount = summary.working;
   const failedCount = summary.failed;
+  const isUploading = activeUploadCount > 0;
+
+  function updateUploadBatch(batchId: string, patch: Partial<UploadBatch>) {
+    setUploadBatches((current) =>
+      current.map((batch) => (batch.id === batchId ? { ...batch, ...patch } : batch))
+    );
+  }
 
   async function refreshDocuments() {
     if (!documentUrl) {
@@ -856,7 +902,6 @@ export function UploadConsole() {
     }
 
     try {
-      setIsUploading(true);
       setError(null);
 
       const candidates = Array.from(files as ArrayLike<File | UploadCandidate>).map(
@@ -866,6 +911,30 @@ export function UploadConsole() {
       const skipped: string[] = [];
       const totalBytes = candidates.reduce((sum, candidate) => sum + candidate.file.size, 0);
       let completedBytes = 0;
+      let createdCount = 0;
+      let skippedCount = 0;
+      const batchId = `batch-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const batch: UploadBatch = {
+        id: batchId,
+        label: summarizeUploadBatch(candidates),
+        status: "uploading",
+        totalFiles: candidates.length,
+        uploadedFiles: 0,
+        totalBytes,
+        uploadedBytes: 0,
+        createdCount: 0,
+        skippedCount: 0,
+        currentFile: candidates[0]?.title ?? null,
+        error: null,
+        startedAt: Date.now(),
+        completedAt: null
+      };
+
+      setActiveUploadCount((current) => current + 1);
+      setUploadBatches((current) => [
+        batch,
+        ...current
+      ].slice(0, 8));
 
       for (const [index, candidate] of candidates.entries()) {
         const formData = new FormData();
@@ -881,8 +950,14 @@ export function UploadConsole() {
           bytesTotal: totalBytes || null,
           percent: totalBytes > 0 ? Math.round((completedBytes / totalBytes) * 100) : null
         });
+        updateUploadBatch(batchId, {
+          status: "uploading",
+          currentFile: candidate.title,
+          uploadedFiles: index,
+          uploadedBytes: completedBytes
+        });
 
-        const response = await uploadWithProgress({
+        const response = await uploadWithProgress<DocumentUploadResponse>({
           url: `${documentUrl}/upload`,
           formData,
           onProgress: (event) => {
@@ -899,6 +974,10 @@ export function UploadConsole() {
               bytesTotal,
               percent
             });
+            updateUploadBatch(batchId, {
+              uploadedBytes: loaded,
+              currentFile: candidate.title
+            });
           }
         });
 
@@ -906,8 +985,32 @@ export function UploadConsole() {
 
         if (response.status === 409) {
           skipped.push(candidate.title);
+          skippedCount += 1;
+          updateUploadBatch(batchId, {
+            status: "importing",
+            uploadedFiles: index + 1,
+            uploadedBytes: completedBytes,
+            skippedCount
+          });
           continue;
         }
+
+        const archive = response.payload?.archive;
+
+        if (archive) {
+          createdCount += archive.createdCount;
+          skippedCount += archive.skippedCount;
+        } else {
+          createdCount += 1;
+        }
+
+        updateUploadBatch(batchId, {
+          status: "importing",
+          uploadedFiles: index + 1,
+          uploadedBytes: completedBytes,
+          createdCount,
+          skippedCount
+        });
       }
 
       await refreshDocuments();
@@ -922,12 +1025,48 @@ export function UploadConsole() {
 
       if (skipped.length < candidates.length) {
         setPage(1);
+        updateUploadBatch(batchId, {
+          status: "queued",
+          uploadedFiles: candidates.length,
+          uploadedBytes: totalBytes,
+          createdCount,
+          skippedCount,
+          currentFile: null
+        });
         void runNextJob();
+      } else {
+        updateUploadBatch(batchId, {
+          status: "done",
+          uploadedFiles: candidates.length,
+          uploadedBytes: totalBytes,
+          createdCount,
+          skippedCount,
+          currentFile: null,
+          completedAt: Date.now()
+        });
       }
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "Failed to upload documents.");
+      const message = nextError instanceof Error ? nextError.message : "Failed to upload documents.";
+      setError(message);
+      setUploadBatches((current) => {
+        const [latest, ...rest] = current;
+
+        if (!latest || latest.completedAt) {
+          return current;
+        }
+
+        return [
+          {
+            ...latest,
+            status: "failed",
+            error: message,
+            completedAt: Date.now()
+          },
+          ...rest
+        ];
+      });
     } finally {
-      setIsUploading(false);
+      setActiveUploadCount((current) => Math.max(0, current - 1));
       setUploadProgress(null);
     }
   }
@@ -1149,6 +1288,53 @@ export function UploadConsole() {
           </span>
         </div>
       </section>
+
+      {uploadBatches.length > 0 ? (
+        <section className="upload-batch-panel" aria-label="Upload batches">
+          <div className="upload-batch-header">
+            <strong>Upload batches</strong>
+            <span>{uploadBatches.length} recent</span>
+          </div>
+          <div className="upload-batch-list">
+            {uploadBatches.map((batch) => {
+              const percent =
+                batch.totalBytes > 0
+                  ? Math.min(100, Math.round((batch.uploadedBytes / batch.totalBytes) * 100))
+                  : batch.uploadedFiles >= batch.totalFiles
+                    ? 100
+                    : 0;
+              const statusText =
+                batch.status === "uploading"
+                  ? "Uploading"
+                  : batch.status === "importing"
+                    ? "Creating documents"
+                    : batch.status === "queued"
+                      ? "Queued for ingestion"
+                      : batch.status === "done"
+                        ? "Done"
+                        : "Failed";
+
+              return (
+                <article className={`upload-batch-card ${batch.status}`} key={batch.id}>
+                  <div className="upload-batch-copy">
+                    <strong>{batch.label}</strong>
+                    <span>
+                      {statusText} · {batch.uploadedFiles}/{batch.totalFiles} uploaded · {batch.createdCount} created ·{" "}
+                      {batch.skippedCount} skipped
+                    </span>
+                    {batch.currentFile ? <small>{batch.currentFile}</small> : null}
+                    {batch.error ? <small className="error">{batch.error}</small> : null}
+                  </div>
+                  <div className="upload-batch-meter" aria-label={`${percent}% uploaded`}>
+                    <span style={{ width: `${percent}%` }} />
+                  </div>
+                  <strong className="upload-batch-percent">{percent}%</strong>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
 
       <section className="upload-console-table" aria-label="Documents">
         <div className="upload-document-list-header">

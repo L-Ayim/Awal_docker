@@ -593,6 +593,115 @@ h1 {
   color: var(--muted);
 }
 
+.upload-batch-panel {
+  display: grid;
+  gap: 10px;
+  margin: 0 28px 14px;
+  padding: 12px;
+  border: 1px solid rgba(217, 226, 236, 0.9);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.upload-batch-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.upload-batch-header strong {
+  font-size: 0.9rem;
+}
+
+.upload-batch-header span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.upload-batch-list {
+  display: grid;
+  gap: 8px;
+}
+
+.upload-batch-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(120px, 220px) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 54px;
+  padding: 10px;
+  border: 1px solid rgba(16, 82, 224, 0.12);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.upload-batch-card.failed {
+  border-color: rgba(185, 28, 28, 0.2);
+  background: #fff7f7;
+}
+
+.upload-batch-copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.upload-batch-copy strong,
+.upload-batch-copy span,
+.upload-batch-copy small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.upload-batch-copy strong {
+  font-size: 0.88rem;
+}
+
+.upload-batch-copy span,
+.upload-batch-copy small {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.upload-batch-copy small.error {
+  color: #b91c1c;
+}
+
+.upload-batch-meter {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(16, 82, 224, 0.11);
+}
+
+.upload-batch-meter span {
+  display: block;
+  height: 100%;
+  min-width: 4px;
+  border-radius: inherit;
+  background: var(--accent-strong);
+}
+
+.upload-batch-card.done .upload-batch-meter span,
+.upload-batch-card.queued .upload-batch-meter span {
+  background: #16a34a;
+}
+
+.upload-batch-card.failed .upload-batch-meter span {
+  background: #dc2626;
+}
+
+.upload-batch-percent {
+  color: var(--accent);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
 .upload-console-summary {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1004,6 +1113,18 @@ h1 {
     padding: 0 18px 14px;
   }
 
+  .upload-batch-panel {
+    margin: 0 18px 14px;
+  }
+
+  .upload-batch-card {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .upload-batch-meter {
+    grid-column: 1 / -1;
+  }
+
   .upload-document-list-header {
     align-items: flex-start;
   }
@@ -1084,6 +1205,10 @@ h1 {
 
   .upload-console-table {
     padding: 0 16px 16px;
+  }
+
+  .upload-batch-panel {
+    margin: 0 16px 14px;
   }
 }
 
