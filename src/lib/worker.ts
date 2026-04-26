@@ -96,6 +96,28 @@ async function extractParsedDocument(params: {
   });
 }
 
+async function loadCachedChunks(prisma: Awaited<ReturnType<typeof import("@/lib/prisma").getPrisma>>, documentRevisionId: string) {
+  return prisma.chunk.findMany({
+    where: {
+      documentRevisionId
+    },
+    orderBy: {
+      chunkIndex: "asc"
+    },
+    select: {
+      id: true,
+      chunkIndex: true,
+      text: true,
+      pageStart: true,
+      pageEnd: true,
+      paragraphStart: true,
+      paragraphEnd: true,
+      lineStart: true,
+      lineEnd: true
+    }
+  });
+}
+
 export async function processQueuedIngestionJob() {
   const { getPrisma } = await import("@/lib/prisma");
   const prisma = getPrisma();
@@ -158,86 +180,12 @@ export async function processQueuedIngestionJob() {
   });
 
   try {
-    const parsed = await extractParsedDocument({
-      title: queuedJob.documentRevision.document.title,
-      mimeType: queuedJob.documentRevision.document.mimeType,
-      sourceKind: queuedJob.documentRevision.document.sourceKind,
-      storageUri: queuedJob.documentRevision.storageUri
-    });
-
-    if (parsed.sections.length === 0) {
-      throw new Error("No extractable text found in uploaded file.");
-    }
-
-    await prisma.documentRevision.update({
-      where: { id: queuedJob.documentRevisionId },
-      data: {
-        status: "parsed_standard"
-      }
-    });
-
-    const chunkEntries = chunkSectionBodies(parsed.sections);
-    const citationIndex = await buildPdfCitationIndex(queuedJob.documentRevision.storageUri);
-    const chunkReferences = chunkEntries.map((chunk) =>
-      locateChunkInPdf(chunk.text, citationIndex)
-    );
-    const aiConfig = getAiRuntimeConfig();
-    let embeddingPayload: Awaited<ReturnType<typeof generateEmbeddings>> | null = null;
-    let embeddingFailureReason: string | null = null;
-
-    if (aiConfig.hasEmbeddingProvider && chunkEntries.length > 0) {
-      try {
-        await prisma.documentRevision.update({
-          where: { id: queuedJob.documentRevisionId },
-          data: {
-            status: "embedding"
-          }
-        });
-
-        embeddingPayload = await generateEmbeddings(
-          chunkEntries.map((chunk) => chunk.text),
-          { runtimeKind: "ingest" }
-        );
-      } catch (error) {
-        embeddingFailureReason =
-          error instanceof Error ? error.message : "embedding_provider_failed";
-      }
-    }
-
-    await prisma.documentIndexCard.deleteMany({
-      where: {
-        documentRevisionId: queuedJob.documentRevisionId
-      }
-    });
-
-    await prisma.chunk.deleteMany({
-      where: {
-        documentRevisionId: queuedJob.documentRevisionId
-      }
-    });
-
-    await prisma.documentSection.deleteMany({
-      where: {
-        documentRevisionId: queuedJob.documentRevisionId
-      }
-    });
-
-    const sectionIdByPath = new Map<string, string>();
-
-    for (const section of parsed.sections) {
-      const createdSection = await prisma.documentSection.create({
-        data: {
-          documentRevisionId: queuedJob.documentRevisionId,
-          sectionPath: section.sectionPath,
-          heading: section.heading,
-          ordinal: section.ordinal
-        }
-      });
-
-      sectionIdByPath.set(section.sectionPath, createdSection.id);
-    }
-
-    const createdChunks: Array<{
+    const cachedChunks = await loadCachedChunks(prisma, queuedJob.documentRevisionId);
+    const canResumeFromCachedChunks = cachedChunks.length > 0;
+    let parserName = "cached-chunks";
+    let qualityNotes = `Reused ${cachedChunks.length} cached chunk(s) from the previous Docling extraction.`;
+    let chunkCount = cachedChunks.length;
+    let createdChunks: Array<{
       id: string;
       chunkIndex: number;
       text: string;
@@ -247,77 +195,177 @@ export async function processQueuedIngestionJob() {
       paragraphEnd: number | null;
       lineStart: number | null;
       lineEnd: number | null;
-    }> = [];
+    }> = cachedChunks;
+    const aiConfig = getAiRuntimeConfig();
+    let embeddingPayload: Awaited<ReturnType<typeof generateEmbeddings>> | null = null;
+    let embeddingFailureReason: string | null = null;
 
-    for (const [index, chunk] of chunkEntries.entries()) {
-      const reference = chunkReferences[index];
-      const createdChunk = await prisma.chunk.create({
+    if (!canResumeFromCachedChunks) {
+      const parsed = await extractParsedDocument({
+        title: queuedJob.documentRevision.document.title,
+        mimeType: queuedJob.documentRevision.document.mimeType,
+        sourceKind: queuedJob.documentRevision.document.sourceKind,
+        storageUri: queuedJob.documentRevision.storageUri
+      });
+
+      if (parsed.sections.length === 0) {
+        throw new Error("No extractable text found in uploaded file.");
+      }
+
+      await prisma.documentRevision.update({
+        where: { id: queuedJob.documentRevisionId },
         data: {
-          documentRevisionId: queuedJob.documentRevisionId,
-          sectionId: sectionIdByPath.get(chunk.sectionPath) ?? null,
+          status: "parsed_standard"
+        }
+      });
+
+      parserName = parsed.parser;
+      qualityNotes = parsed.qualityNotes;
+
+      const chunkEntries = chunkSectionBodies(parsed.sections);
+      chunkCount = chunkEntries.length;
+      const citationIndex = await buildPdfCitationIndex(queuedJob.documentRevision.storageUri);
+      const chunkReferences = chunkEntries.map((chunk) =>
+        locateChunkInPdf(chunk.text, citationIndex)
+      );
+
+      if (aiConfig.hasEmbeddingProvider && chunkEntries.length > 0) {
+        try {
+          await prisma.documentRevision.update({
+            where: { id: queuedJob.documentRevisionId },
+            data: {
+              status: "embedding"
+            }
+          });
+
+          embeddingPayload = await generateEmbeddings(
+            chunkEntries.map((chunk) => chunk.text),
+            { runtimeKind: "ingest" }
+          );
+        } catch (error) {
+          embeddingFailureReason =
+            error instanceof Error ? error.message : "embedding_provider_failed";
+        }
+      }
+
+      await prisma.documentIndexCard.deleteMany({
+        where: {
+          documentRevisionId: queuedJob.documentRevisionId
+        }
+      });
+
+      await prisma.chunk.deleteMany({
+        where: {
+          documentRevisionId: queuedJob.documentRevisionId
+        }
+      });
+
+      await prisma.documentSection.deleteMany({
+        where: {
+          documentRevisionId: queuedJob.documentRevisionId
+        }
+      });
+
+      const sectionIdByPath = new Map<string, string>();
+
+      for (const section of parsed.sections) {
+        const createdSection = await prisma.documentSection.create({
+          data: {
+            documentRevisionId: queuedJob.documentRevisionId,
+            sectionPath: section.sectionPath,
+            heading: section.heading,
+            ordinal: section.ordinal
+          }
+        });
+
+        sectionIdByPath.set(section.sectionPath, createdSection.id);
+      }
+
+      createdChunks = [];
+
+      for (const [index, chunk] of chunkEntries.entries()) {
+        const reference = chunkReferences[index];
+        const createdChunk = await prisma.chunk.create({
+          data: {
+            documentRevisionId: queuedJob.documentRevisionId,
+            sectionId: sectionIdByPath.get(chunk.sectionPath) ?? null,
+            chunkIndex: index,
+            text: chunk.text,
+            tokenCount: chunk.text.split(/\s+/).filter(Boolean).length,
+            charCount: chunk.text.length,
+            pageStart: reference?.pageStart ?? null,
+            pageEnd: reference?.pageEnd ?? null,
+            paragraphStart: reference?.paragraphStart ?? null,
+            paragraphEnd: reference?.paragraphEnd ?? null,
+            lineStart: reference?.lineStart ?? null,
+            lineEnd: reference?.lineEnd ?? null,
+            searchText: chunk.text.toLowerCase()
+          }
+        });
+
+        if (reference) {
+          await prisma.citationSpan.create({
+            data: {
+              chunkId: createdChunk.id,
+              startChar: 0,
+              endChar: Math.max(1, Math.min(chunk.text.length, reference.quotedText.length)),
+              quotedText: reference.quotedText,
+              pageStart: reference.pageStart,
+              pageEnd: reference.pageEnd,
+              paragraphStart: reference.paragraphStart,
+              paragraphEnd: reference.paragraphEnd,
+              lineStart: reference.lineStart,
+              lineEnd: reference.lineEnd
+            }
+          });
+        }
+
+        createdChunks.push({
+          id: createdChunk.id,
           chunkIndex: index,
           text: chunk.text,
-          tokenCount: chunk.text.split(/\s+/).filter(Boolean).length,
-          charCount: chunk.text.length,
           pageStart: reference?.pageStart ?? null,
           pageEnd: reference?.pageEnd ?? null,
           paragraphStart: reference?.paragraphStart ?? null,
           paragraphEnd: reference?.paragraphEnd ?? null,
           lineStart: reference?.lineStart ?? null,
-          lineEnd: reference?.lineEnd ?? null,
-          searchText: chunk.text.toLowerCase()
-        }
-      });
-
-      if (reference) {
-        await prisma.citationSpan.create({
-          data: {
-            chunkId: createdChunk.id,
-            startChar: 0,
-            endChar: Math.max(1, Math.min(chunk.text.length, reference.quotedText.length)),
-            quotedText: reference.quotedText,
-            pageStart: reference.pageStart,
-            pageEnd: reference.pageEnd,
-            paragraphStart: reference.paragraphStart,
-            paragraphEnd: reference.paragraphEnd,
-            lineStart: reference.lineStart,
-            lineEnd: reference.lineEnd
-          }
+          lineEnd: reference?.lineEnd ?? null
         });
       }
 
-      createdChunks.push({
-        id: createdChunk.id,
-        chunkIndex: index,
-        text: chunk.text,
-        pageStart: reference?.pageStart ?? null,
-        pageEnd: reference?.pageEnd ?? null,
-        paragraphStart: reference?.paragraphStart ?? null,
-        paragraphEnd: reference?.paragraphEnd ?? null,
-        lineStart: reference?.lineStart ?? null,
-        lineEnd: reference?.lineEnd ?? null
-      });
-    }
+      if (embeddingPayload) {
+        for (const createdChunk of createdChunks) {
+          const vector = embeddingPayload.data.find(
+            (entry) => entry.index === createdChunk.chunkIndex
+          );
 
-    if (embeddingPayload) {
-      for (const createdChunk of createdChunks) {
-        const vector = embeddingPayload.data.find(
-          (entry) => entry.index === createdChunk.chunkIndex
-        );
-
-        if (!vector) {
-          continue;
-        }
-
-        await prisma.chunkEmbedding.create({
-          data: {
-            chunkId: createdChunk.id,
-            modelName: embeddingPayload.model,
-            dimensions: embeddingPayload.dimensions,
-            vectorJson: vector.embedding
+          if (!vector) {
+            continue;
           }
-        });
+
+          await prisma.chunkEmbedding.create({
+            data: {
+              chunkId: createdChunk.id,
+              modelName: embeddingPayload.model,
+              dimensions: embeddingPayload.dimensions,
+              vectorJson: vector.embedding
+            }
+          });
+        }
       }
+    } else {
+      await prisma.documentRevision.update({
+        where: { id: queuedJob.documentRevisionId },
+        data: {
+          status: "parsed_standard"
+        }
+      });
+
+      await prisma.documentIndexCard.deleteMany({
+        where: {
+          documentRevisionId: queuedJob.documentRevisionId
+        }
+      });
     }
 
     const chunkInputs = createdChunks.map((chunk) => ({
@@ -464,7 +512,7 @@ export async function processQueuedIngestionJob() {
         extractionQuality: "medium",
         reviewFlag: false,
         qualityNotes:
-          `${parsed.qualityNotes} Generated ${chunkEntries.length} chunks with the ${parsed.parser} parser.` +
+          `${qualityNotes} Generated ${chunkCount} chunks with the ${parserName} parser.` +
           (embeddingPayload
             ? ` Embedded ${embeddingPayload.data.length} chunk(s) with ${embeddingPayload.model}.`
             : embeddingFailureReason
