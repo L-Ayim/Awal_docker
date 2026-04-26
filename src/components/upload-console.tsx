@@ -876,18 +876,6 @@ export function UploadConsole() {
           </nav>
 
           <div className="sidebar-section upload-sidebar-section">
-            <span className="sidebar-label">Ingestion</span>
-            <IngestRuntimePanel
-              runtime={ingestRuntime}
-              isWaking={isWakingIngestRuntime}
-              isStopping={isStoppingIngestRuntime}
-              onWake={() => void wakeIngestRuntime()}
-              onSleep={() => void sleepIngestRuntime()}
-              onRefresh={() => void refreshIngestRuntime().catch(() => undefined)}
-            />
-          </div>
-
-          <div className="sidebar-section upload-sidebar-section">
             <span className="sidebar-label">Library</span>
             <div className="upload-sidebar-stats">
               <div>
@@ -916,23 +904,33 @@ export function UploadConsole() {
               <p className="upload-console-kicker">Awal library</p>
               <h1>Library</h1>
             </div>
-            <div className="upload-console-actions">
-              <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isUploading}>
-                <Upload aria-hidden="true" />
-                <span>{isUploading ? "Adding" : "Add files"}</span>
-              </button>
-              <button type="button" onClick={() => folderInputRef.current?.click()} disabled={isUploading}>
-                <FolderUp aria-hidden="true" />
-                <span>Add folder</span>
-              </button>
-              <button type="button" onClick={() => void runNextJob()} disabled={isRunning}>
-                <Play aria-hidden="true" />
-                <span>{isRunning ? "Running" : "Run queue"}</span>
-              </button>
-              <button type="button" onClick={() => void refreshDocuments()} disabled={!documentUrl}>
-                <RefreshCw aria-hidden="true" />
-                <span>Refresh</span>
-              </button>
+            <div className="upload-console-header-side">
+              <IngestRuntimePanel
+                runtime={ingestRuntime}
+                isWaking={isWakingIngestRuntime}
+                isStopping={isStoppingIngestRuntime}
+                onWake={() => void wakeIngestRuntime()}
+                onSleep={() => void sleepIngestRuntime()}
+                onRefresh={() => void refreshIngestRuntime().catch(() => undefined)}
+              />
+              <div className="upload-console-actions">
+                <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isUploading}>
+                  <Upload aria-hidden="true" />
+                  <span>{isUploading ? "Adding" : "Add files"}</span>
+                </button>
+                <button type="button" onClick={() => folderInputRef.current?.click()} disabled={isUploading}>
+                  <FolderUp aria-hidden="true" />
+                  <span>Add folder</span>
+                </button>
+                <button type="button" onClick={() => void runNextJob()} disabled={isRunning}>
+                  <Play aria-hidden="true" />
+                  <span>{isRunning ? "Running" : "Run queue"}</span>
+                </button>
+                <button type="button" onClick={() => void refreshDocuments()} disabled={!documentUrl}>
+                  <RefreshCw aria-hidden="true" />
+                  <span>Refresh</span>
+                </button>
+              </div>
             </div>
           </header>
 
@@ -962,50 +960,6 @@ export function UploadConsole() {
           }
         }}
       />
-
-      <section
-        className={`upload-drop-zone${isDraggingUpload ? " dragging" : ""}`}
-        aria-label="Upload documents"
-        onDragEnter={(event) => {
-          event.preventDefault();
-          setIsDraggingUpload(true);
-        }}
-        onDragOver={(event) => {
-          event.preventDefault();
-          event.dataTransfer.dropEffect = "copy";
-          setIsDraggingUpload(true);
-        }}
-        onDragLeave={(event) => {
-          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-            setIsDraggingUpload(false);
-          }
-        }}
-        onDrop={(event) => {
-          void handleDrop(event);
-        }}
-      >
-        <div className="upload-drop-icon">
-          <FolderUp aria-hidden="true" />
-        </div>
-        <div>
-          <h2>{isUploading ? "Uploading documents" : "Drop documents, folders, or zip files"}</h2>
-          <p>Files are checked before ingestion, so duplicates are skipped instead of queued.</p>
-        </div>
-        <div className="upload-drop-actions">
-          <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isUploading}>
-            <Upload aria-hidden="true" />
-            <span>Files</span>
-          </button>
-          <button type="button" onClick={() => folderInputRef.current?.click()} disabled={isUploading}>
-            <FolderUp aria-hidden="true" />
-            <span>Folder</span>
-          </button>
-          <span className="upload-drop-zip">
-            <FileArchive aria-hidden="true" />
-            <span>Zip</span>
-          </span>
-        </div>
-      </section>
 
       {error ? <p className="upload-console-error">{error}</p> : null}
 
@@ -1173,6 +1127,50 @@ export function UploadConsole() {
             );
           })
         )}
+      </section>
+
+      <section
+        className={`upload-drop-zone${isDraggingUpload ? " dragging" : ""}`}
+        aria-label="Upload documents"
+        onDragEnter={(event) => {
+          event.preventDefault();
+          setIsDraggingUpload(true);
+        }}
+        onDragOver={(event) => {
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "copy";
+          setIsDraggingUpload(true);
+        }}
+        onDragLeave={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+            setIsDraggingUpload(false);
+          }
+        }}
+        onDrop={(event) => {
+          void handleDrop(event);
+        }}
+      >
+        <div className="upload-drop-icon">
+          <FolderUp aria-hidden="true" />
+        </div>
+        <div>
+          <h2>{isUploading ? "Uploading documents" : "Drop documents, folders, or zip files"}</h2>
+          <p>Files are checked before ingestion, so duplicates are skipped instead of queued.</p>
+        </div>
+        <div className="upload-drop-actions">
+          <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isUploading}>
+            <Upload aria-hidden="true" />
+            <span>Files</span>
+          </button>
+          <button type="button" onClick={() => folderInputRef.current?.click()} disabled={isUploading}>
+            <FolderUp aria-hidden="true" />
+            <span>Folder</span>
+          </button>
+          <span className="upload-drop-zip">
+            <FileArchive aria-hidden="true" />
+            <span>Zip</span>
+          </span>
+        </div>
       </section>
         </section>
       </section>

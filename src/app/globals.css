@@ -397,6 +397,18 @@ h1 {
   gap: 10px;
 }
 
+.upload-console-header-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  min-width: 0;
+}
+
+.upload-console-header-side .upload-ingest-runtime {
+  width: min(280px, 100%);
+}
+
 .upload-console-actions button,
 .upload-document-actions button,
 .upload-document-actions a {
@@ -568,7 +580,7 @@ h1 {
   gap: 10px;
   min-height: 0;
   overflow: auto;
-  padding: 0 28px 28px;
+  padding: 0 28px 18px;
   scrollbar-color: rgba(16, 82, 224, 0.35) transparent;
   scrollbar-width: thin;
 }
@@ -832,6 +844,10 @@ h1 {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
+  .upload-sidebar-section {
+    display: none;
+  }
+
   .upload-sidebar-stats div {
     min-height: 60px;
     padding: 9px;
@@ -852,19 +868,31 @@ h1 {
   }
 
   .upload-console-header {
-    display: block;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
     padding: 22px 18px 18px;
+  }
+
+  .upload-console-header-side {
+    align-items: stretch;
+  }
+
+  .upload-console-header-side .upload-ingest-runtime {
+    width: 100%;
+    order: 2;
   }
 
   .upload-console-actions {
     justify-content: flex-start;
-    margin-top: 14px;
+    margin-top: 0;
+    order: 1;
   }
 
   .upload-drop-zone {
     grid-template-columns: 1fr;
     align-items: start;
-    margin: 16px 18px;
+    margin: 0 18px 18px;
   }
 
   .upload-drop-actions {
@@ -874,7 +902,7 @@ h1 {
   .upload-console-summary {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 8px;
-    margin: 0 18px 12px;
+    margin: 0 18px 10px;
   }
 
   .upload-console-summary div {
@@ -892,7 +920,7 @@ h1 {
 
   .upload-console-table {
     overflow: visible;
-    padding: 0 18px 18px;
+    padding: 0 18px 14px;
   }
 
   .upload-document-row {
