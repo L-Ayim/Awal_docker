@@ -119,13 +119,12 @@ function buildContextualQuery(params: {
   }>;
 }) {
   const recentMessages = params.previousMessages
-    .filter((message) => message.role === "user" || message.role === "assistant")
+    .filter((message) => message.role === "user")
     .slice(-6)
     .map((message) => {
-      const role = message.role === "assistant" ? "Awal" : "User";
       const content = message.content.replace(/\s+/g, " ").trim().slice(0, 700);
 
-      return content ? `${role}: ${content}` : null;
+      return content ? `User: ${content}` : null;
     })
     .filter(Boolean);
 
@@ -134,8 +133,8 @@ function buildContextualQuery(params: {
   }
 
   return [
-    "Use the recent conversation only to resolve follow-up references like 'that', 'there', 'names', or 'it'.",
-    "Recent conversation:",
+    "Use the recent user messages only to resolve follow-up references like 'that', 'there', 'names', or 'it'. Do not treat chat history as document evidence.",
+    "Recent user messages:",
     ...recentMessages,
     "",
     `Current user question: ${params.currentQuestion}`
