@@ -146,6 +146,13 @@ export async function processQueuedIngestionJob() {
       throw new Error("No extractable text found in uploaded file.");
     }
 
+    await prisma.documentRevision.update({
+      where: { id: queuedJob.documentRevisionId },
+      data: {
+        status: "parsed_standard"
+      }
+    });
+
     const chunkEntries = chunkSectionBodies(parsed.sections);
     const citationIndex = await buildPdfCitationIndex(queuedJob.documentRevision.storageUri);
     const chunkReferences = chunkEntries.map((chunk) =>
@@ -157,6 +164,13 @@ export async function processQueuedIngestionJob() {
 
     if (aiConfig.hasEmbeddingProvider && chunkEntries.length > 0) {
       try {
+        await prisma.documentRevision.update({
+          where: { id: queuedJob.documentRevisionId },
+          data: {
+            status: "embedding"
+          }
+        });
+
         embeddingPayload = await generateEmbeddings(
           chunkEntries.map((chunk) => chunk.text),
           { runtimeKind: "ingest" }
@@ -303,6 +317,7 @@ export async function processQueuedIngestionJob() {
       try {
         const batches = chunkArray(chunkInputs, MEMORY_OBJECT_BATCH_SIZE);
 
+        // Run semantic memory generation only after Docling extraction and ingest embeddings finish.
         for (const batch of batches) {
           const generated = await generateDocumentMemoryObjects({
             documentTitle: queuedJob.documentRevision.document.title,

@@ -1,4 +1,5 @@
-import { badRequest, notFound, ok, serverError } from "@/lib/api";
+import { createHash } from "crypto";
+import { badRequest, conflict, notFound, ok, serverError } from "@/lib/api";
 import { serializeIngestionJob, serializeRevision } from "@/lib/ingestion";
 import { persistUpload } from "@/lib/uploads";
 
@@ -44,13 +45,6 @@ export async function POST(request: Request, context: RouteContext) {
       return badRequest("Uploaded file is empty.");
     }
 
-    const persisted = await persistUpload({
-      workspaceId,
-      collectionId,
-      filename: file.name,
-      bytes
-    });
-
     const title =
       typeof titleValue === "string" && titleValue.trim().length > 0
         ? titleValue.trim()
@@ -60,6 +54,43 @@ export async function POST(request: Request, context: RouteContext) {
       typeof ingestionModeValue === "string" && ingestionModeValue.trim().length > 0
         ? ingestionModeValue.trim()
         : "standard";
+
+    const checksum = createHash("sha256").update(bytes).digest("hex");
+    const duplicate = await prisma.document.findFirst({
+      where: {
+        workspaceId,
+        collectionId,
+        status: {
+          not: "archived"
+        },
+        revisions: {
+          some: {
+            checksum
+          }
+        }
+      },
+      select: {
+        id: true,
+        title: true
+      },
+      orderBy: {
+        updatedAt: "desc"
+      }
+    });
+
+    if (duplicate) {
+      return conflict(`This file was already uploaded as "${duplicate.title}".`, {
+        documentId: duplicate.id,
+        checksum
+      });
+    }
+
+    const persisted = await persistUpload({
+      workspaceId,
+      collectionId,
+      filename: file.name,
+      bytes
+    });
 
     const created = await prisma.$transaction(async (tx) => {
       const document = await tx.document.create({

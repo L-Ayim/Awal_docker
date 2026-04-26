@@ -16,6 +16,17 @@ export function badRequest(message: string, details?: unknown) {
   );
 }
 
+export function conflict(message: string, details?: unknown) {
+  return NextResponse.json(
+    {
+      error: "conflict",
+      message,
+      details
+    },
+    { status: 409 }
+  );
+}
+
 export function notFound(message: string) {
   return NextResponse.json(
     {
@@ -39,4 +50,3 @@ export function serverError(message: string) {
 export function validationError(error: ZodError) {
   return badRequest("Validation failed.", error.flatten());
 }
-

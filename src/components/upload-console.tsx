@@ -183,7 +183,6 @@ export function UploadConsole() {
   const [isLoading, setIsLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
-  const [isDeduplicating, setIsDeduplicating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const documentUrl = bootstrap
@@ -278,25 +277,6 @@ export function UploadConsole() {
       setError(nextError instanceof Error ? nextError.message : "Failed to run ingestion.");
     } finally {
       setIsRunning(false);
-    }
-  }
-
-  async function removeDuplicates() {
-    if (!documentUrl) {
-      return;
-    }
-
-    try {
-      setIsDeduplicating(true);
-      setError(null);
-      await parseJson(await fetch(`${documentUrl}/deduplicate`, { method: "POST" }));
-      setExpandedIds([]);
-      setDetailsById({});
-      await refreshDocuments();
-    } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "Failed to remove duplicates.");
-    } finally {
-      setIsDeduplicating(false);
     }
   }
 
@@ -405,10 +385,6 @@ export function UploadConsole() {
           <button type="button" onClick={() => void refreshDocuments()} disabled={!documentUrl}>
             <RefreshCw aria-hidden="true" />
             <span>Refresh</span>
-          </button>
-          <button type="button" onClick={() => void removeDuplicates()} disabled={isDeduplicating || !documentUrl}>
-            <Trash2 aria-hidden="true" />
-            <span>{isDeduplicating ? "Removing" : "Remove duplicates"}</span>
           </button>
         </div>
       </header>
