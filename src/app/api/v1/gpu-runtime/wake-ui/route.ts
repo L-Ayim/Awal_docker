@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
 import { wakeGpuRuntime } from "@/lib/gpu-runtime";
 
-export async function POST() {
+function runtimeKind(request: Request) {
+  return new URL(request.url).searchParams.get("kind") === "ingest" ? "ingest" : "chat";
+}
+
+export async function POST(request: Request) {
   try {
-    const runtime = await wakeGpuRuntime({ waitForHealth: false, kind: "chat" });
+    const runtime = await wakeGpuRuntime({ waitForHealth: false, kind: runtimeKind(request) });
 
     return NextResponse.json({
       ok: true,

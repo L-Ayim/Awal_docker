@@ -1,7 +1,7 @@
 "use client";
 
 import { type DragEvent, useEffect, useRef, useState } from "react";
-import { ChevronDown, FileArchive, FileText, FolderUp, Play, RefreshCw, RotateCw, Trash2, Upload } from "lucide-react";
+import { ChevronDown, FileArchive, FileText, FolderUp, Play, RefreshCw, RotateCw, Square, Trash2, Upload } from "lucide-react";
 
 type BootstrapResponse = {
   workspace: {
@@ -130,6 +130,19 @@ type DocumentsResponse = {
   documents: DocumentRow[];
 };
 
+type RuntimeStatus = "asleep" | "waking" | "ready" | "stopping" | "failed";
+
+type RuntimeSnapshot = {
+  automationEnabled: boolean;
+  status: RuntimeStatus;
+  podId: string | null;
+  podName: string | null;
+  lastRequestAt: string | null;
+  lastHealthAt: string | null;
+  idleMinutes: number;
+  lastError: string | null;
+};
+
 type UploadableFile = File & {
   webkitRelativePath?: string;
 };
@@ -198,6 +211,34 @@ function formatDate(value: string | null) {
   }
 
   return new Date(value).toLocaleString();
+}
+
+function getRuntimeLabel(status: RuntimeStatus) {
+  switch (status) {
+    case "ready":
+      return "Ingest ready";
+    case "waking":
+      return "Ingest starting";
+    case "stopping":
+      return "Ingest stopping";
+    case "failed":
+      return "Ingest failed";
+    case "asleep":
+    default:
+      return "Ingest asleep";
+  }
+}
+
+function formatRemaining(ms: number) {
+  if (ms <= 0) {
+    return "due now";
+  }
+
+  const totalMinutes = Math.ceil(ms / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
 }
 
 const ingestionSteps = [
@@ -350,6 +391,109 @@ async function collectDroppedFiles(dataTransfer: DataTransfer): Promise<UploadCa
   return Array.from(dataTransfer.files).map((file) => fileToUploadCandidate(file as UploadableFile));
 }
 
+function IngestRuntimePanel({
+  runtime,
+  isWaking,
+  isStopping,
+  onWake,
+  onSleep,
+  onRefresh
+}: {
+  runtime: RuntimeSnapshot | null;
+  isWaking: boolean;
+  isStopping: boolean;
+  onWake: () => void;
+  onSleep: () => void;
+  onRefresh: () => void;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+  const sleepAt =
+    runtime?.lastRequestAt && runtime.status === "ready"
+      ? new Date(runtime.lastRequestAt).getTime() + runtime.idleMinutes * 60 * 1000
+      : null;
+  const remainingMs = sleepAt ? sleepAt - now : null;
+  const sleepLabel =
+    remainingMs !== null && remainingMs <= 0
+      ? "Sleep due"
+      : remainingMs !== null
+        ? `Sleeps in ${formatRemaining(remainingMs)}`
+        : null;
+  const idleProgress =
+    remainingMs !== null && runtime
+      ? Math.max(0, Math.min(100, 100 - (remainingMs / (runtime.idleMinutes * 60 * 1000)) * 100))
+      : 0;
+  const canWake =
+    Boolean(runtime?.automationEnabled) &&
+    !isWaking &&
+    !isStopping &&
+    (runtime?.status === "asleep" || runtime?.status === "failed");
+  const canSleep =
+    Boolean(runtime?.automationEnabled) &&
+    !isWaking &&
+    !isStopping &&
+    (runtime?.status === "ready" || runtime?.status === "waking");
+  const title =
+    runtime?.automationEnabled === false
+      ? "RunPod automation is disabled"
+      : runtime?.podId
+        ? `${getRuntimeLabel(runtime.status)}: ${runtime.podName || runtime.podId}${
+            sleepLabel ? `. ${sleepLabel}.` : ""
+          }`
+        : runtime?.lastError || getRuntimeLabel(runtime?.status ?? "asleep");
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => setNow(Date.now()), 30000);
+
+    return () => window.clearInterval(intervalId);
+  }, []);
+
+  return (
+    <section className="upload-ingest-runtime" aria-label="Ingest pod status">
+      <div
+        className={`runtime-status-pill ${runtime?.status ?? "unknown"}`}
+        title={title}
+        aria-label={title}
+      >
+        <span aria-hidden="true" />
+        <div className="runtime-status-copy">
+          <strong>{runtime ? getRuntimeLabel(runtime.status) : "Ingest unknown"}</strong>
+          <small>
+            {remainingMs !== null
+              ? sleepLabel
+              : runtime?.podId
+                ? runtime.podId.slice(0, 6)
+                : "No pod"}
+          </small>
+        </div>
+        {remainingMs !== null ? (
+          <div className="runtime-idle-timeline" aria-hidden="true">
+            <span style={{ width: `${idleProgress}%` }} />
+          </div>
+        ) : null}
+        <button
+          type="button"
+          className="runtime-wake-button"
+          onClick={canSleep ? onSleep : onWake}
+          disabled={!canWake && !canSleep}
+          aria-label={canSleep ? "Stop ingest pod" : "Start ingest pod"}
+          title={canSleep ? "Stop ingest pod" : "Start ingest pod"}
+        >
+          {canSleep ? <Square aria-hidden="true" /> : <Play aria-hidden="true" />}
+        </button>
+        <button
+          type="button"
+          className="runtime-wake-button"
+          onClick={onRefresh}
+          aria-label="Refresh ingest pod status"
+          title="Refresh ingest pod status"
+        >
+          <RefreshCw aria-hidden="true" />
+        </button>
+      </div>
+    </section>
+  );
+}
+
 export function UploadConsole() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
@@ -360,6 +504,9 @@ export function UploadConsole() {
   const [isLoading, setIsLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
+  const [ingestRuntime, setIngestRuntime] = useState<RuntimeSnapshot | null>(null);
+  const [isWakingIngestRuntime, setIsWakingIngestRuntime] = useState(false);
+  const [isStoppingIngestRuntime, setIsStoppingIngestRuntime] = useState(false);
   const [isDraggingUpload, setIsDraggingUpload] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -374,6 +521,38 @@ export function UploadConsole() {
 
     const payload = await parseJson<DocumentsResponse>(await fetch(documentUrl));
     setDocuments(payload.documents);
+  }
+
+  async function refreshIngestRuntime() {
+    const data = await parseJson<{
+      automationEnabled: boolean;
+      ingestIdleMinutes: number;
+      runtimes: {
+        ingest: {
+          status: RuntimeStatus;
+          podId: string | null;
+          podName: string | null;
+          lastRequestAt: string | null;
+          lastHealthAt: string | null;
+          lastError: string | null;
+        };
+      };
+    }>(
+      await fetch("/api/v1/gpu-runtime", {
+        cache: "no-store"
+      })
+    );
+
+    setIngestRuntime({
+      automationEnabled: data.automationEnabled,
+      status: data.runtimes.ingest.status,
+      podId: data.runtimes.ingest.podId,
+      podName: data.runtimes.ingest.podName,
+      lastRequestAt: data.runtimes.ingest.lastRequestAt,
+      lastHealthAt: data.runtimes.ingest.lastHealthAt,
+      idleMinutes: data.ingestIdleMinutes,
+      lastError: data.runtimes.ingest.lastError
+    });
   }
 
   useEffect(() => {
@@ -421,6 +600,39 @@ export function UploadConsole() {
     return () => window.clearInterval(id);
   }, [documentUrl]);
 
+  useEffect(() => {
+    let alive = true;
+
+    async function poll() {
+      try {
+        await refreshIngestRuntime();
+      } catch {
+        if (alive) {
+          setIngestRuntime(null);
+        }
+      }
+    }
+
+    void poll();
+    const hasWorkingDocuments = documents.some((document) =>
+      ["queued", "processing", "uploaded"].includes(statusLabel(document))
+    );
+    const shouldPollFast =
+      hasWorkingDocuments ||
+      isRunning ||
+      isWakingIngestRuntime ||
+      isStoppingIngestRuntime ||
+      ingestRuntime?.status === "waking" ||
+      ingestRuntime?.status === "ready" ||
+      ingestRuntime?.status === "stopping";
+    const intervalId = window.setInterval(() => void poll(), shouldPollFast ? 5000 : 15000);
+
+    return () => {
+      alive = false;
+      window.clearInterval(intervalId);
+    };
+  }, [documents, ingestRuntime?.status, isRunning, isWakingIngestRuntime, isStoppingIngestRuntime]);
+
   async function ensureDetail(documentId: string) {
     if (detailsById[documentId]) {
       return;
@@ -455,6 +667,54 @@ export function UploadConsole() {
       setError(nextError instanceof Error ? nextError.message : "Failed to run ingestion.");
     } finally {
       setIsRunning(false);
+    }
+  }
+
+  async function wakeIngestRuntime() {
+    try {
+      setIsWakingIngestRuntime(true);
+      setError(null);
+      const data = await parseJson<{
+        runtime: Omit<RuntimeSnapshot, "automationEnabled" | "idleMinutes">;
+      }>(
+        await fetch("/api/v1/gpu-runtime/wake-ui?kind=ingest", {
+          method: "POST"
+        })
+      );
+
+      setIngestRuntime((current) => ({
+        automationEnabled: current?.automationEnabled ?? true,
+        idleMinutes: current?.idleMinutes ?? 5,
+        ...data.runtime
+      }));
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Failed to start ingest pod.");
+    } finally {
+      setIsWakingIngestRuntime(false);
+    }
+  }
+
+  async function sleepIngestRuntime() {
+    try {
+      setIsStoppingIngestRuntime(true);
+      setError(null);
+      const data = await parseJson<{
+        runtime: Omit<RuntimeSnapshot, "automationEnabled" | "idleMinutes">;
+      }>(
+        await fetch("/api/v1/gpu-runtime/sleep-ui?kind=ingest", {
+          method: "POST"
+        })
+      );
+
+      setIngestRuntime((current) => ({
+        automationEnabled: current?.automationEnabled ?? true,
+        idleMinutes: current?.idleMinutes ?? 5,
+        ...data.runtime
+      }));
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Failed to stop ingest pod.");
+    } finally {
+      setIsStoppingIngestRuntime(false);
     }
   }
 
@@ -596,6 +856,15 @@ export function UploadConsole() {
           </button>
         </div>
       </header>
+
+      <IngestRuntimePanel
+        runtime={ingestRuntime}
+        isWaking={isWakingIngestRuntime}
+        isStopping={isStoppingIngestRuntime}
+        onWake={() => void wakeIngestRuntime()}
+        onSleep={() => void sleepIngestRuntime()}
+        onRefresh={() => void refreshIngestRuntime().catch(() => undefined)}
+      />
 
       <input
         ref={fileInputRef}
