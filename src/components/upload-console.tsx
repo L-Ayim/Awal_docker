@@ -200,6 +200,67 @@ function formatDate(value: string | null) {
   return new Date(value).toLocaleString();
 }
 
+const ingestionSteps = [
+  { status: "uploaded", label: "Queued" },
+  { status: "parsing_standard", label: "Docling" },
+  { status: "parsed_standard", label: "Chunking" },
+  { status: "embedding", label: "Embeddings" },
+  { status: "normalizing", label: "LLM understanding" },
+  { status: "ready", label: "Ready" }
+];
+
+function documentProgress(document: DocumentRow) {
+  const revisionStatus = document.latestRevision?.status || document.status;
+  const jobStatus = document.latestJob?.status || "";
+
+  if (document.status === "failed" || revisionStatus === "failed" || jobStatus === "failed") {
+    return {
+      visible: true,
+      label: "Failed",
+      detail: document.latestJob?.lastError || document.latestRevision?.qualityNotes || "Ingestion failed.",
+      percent: 100,
+      activeIndex: -1
+    };
+  }
+
+  if (document.status === "ready" || revisionStatus === "ready" || jobStatus === "completed") {
+    return {
+      visible: false,
+      label: "Ready",
+      detail: "Ready",
+      percent: 100,
+      activeIndex: ingestionSteps.length - 1
+    };
+  }
+
+  const activeIndex = Math.max(
+    0,
+    ingestionSteps.findIndex((step) => step.status === revisionStatus)
+  );
+  const label =
+    jobStatus === "queued"
+      ? "Queued"
+      : ingestionSteps[activeIndex]?.label || revisionStatus.replace(/_/g, " ");
+  const detail =
+    revisionStatus === "parsing_standard"
+      ? "Extracting document structure with Docling."
+      : revisionStatus === "embedding"
+        ? `Embedding ${document.latestRevision?.chunkCount ?? 0} chunk(s).`
+        : revisionStatus === "normalizing"
+          ? "Generating semantic memory cards with the LLM."
+          : jobStatus === "queued"
+            ? "Waiting for the ingest worker."
+            : "Preparing document memory.";
+
+  return {
+    visible: true,
+    label,
+    detail,
+    percent: Math.round((activeIndex / Math.max(1, ingestionSteps.length - 1)) * 100),
+    activeIndex
+  };
+}
+
 function fileTitle(file: UploadableFile) {
   return file.webkitRelativePath?.trim() || file.name;
 }
@@ -633,6 +694,7 @@ export function UploadConsole() {
           documents.map((document) => {
             const detail = detailsById[document.id];
             const expanded = expandedIds.includes(document.id);
+            const progress = documentProgress(document);
 
             return (
               <article className="upload-document-card" key={document.id}>
@@ -651,6 +713,27 @@ export function UploadConsole() {
                       <span>{document.latestRevision?.chunkCount ?? 0} chunks</span>
                       <span>{document.latestRevision?.indexCardCount ?? 0} cards</span>
                     </div>
+                    {progress.visible ? (
+                      <div className="upload-document-progress" aria-label={`Ingestion progress: ${progress.label}`}>
+                        <div className="upload-progress-header">
+                          <strong>{progress.label}</strong>
+                          <span>{progress.detail}</span>
+                        </div>
+                        <div className="upload-progress-track">
+                          <span style={{ width: `${progress.percent}%` }} />
+                        </div>
+                        <div className="upload-progress-steps">
+                          {ingestionSteps.map((step, index) => (
+                            <span
+                              className={index <= progress.activeIndex ? "active" : ""}
+                              key={step.status}
+                            >
+                              {step.label}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
                     {document.latestRevision?.qualityNotes ? (
                       <p className="upload-document-note">{document.latestRevision.qualityNotes}</p>
                     ) : document.latestJob?.lastError ? (

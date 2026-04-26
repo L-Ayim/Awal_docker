@@ -577,6 +577,65 @@ h1 {
   color: #b91c1c;
 }
 
+.upload-document-progress {
+  margin-top: 10px;
+  max-width: 760px;
+}
+
+.upload-progress-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 0.82rem;
+}
+
+.upload-progress-header strong {
+  color: var(--accent);
+  font-size: 0.82rem;
+}
+
+.upload-progress-header span {
+  color: var(--muted);
+}
+
+.upload-progress-track {
+  height: 5px;
+  margin-top: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(16, 82, 224, 0.1);
+}
+
+.upload-progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent-strong);
+  transition: width 180ms ease;
+}
+
+.upload-progress-steps {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.upload-progress-steps span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.upload-progress-steps span.active {
+  color: var(--accent);
+}
+
 .upload-document-actions {
   display: flex;
   align-items: center;
@@ -675,6 +734,10 @@ h1 {
 
   .upload-document-actions {
     grid-column: 1 / -1;
+  }
+
+  .upload-progress-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .upload-detail-grid {

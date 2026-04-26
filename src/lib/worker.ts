@@ -337,14 +337,21 @@ export async function processQueuedIngestionJob() {
 
     if (aiConfig.hasGenerationProvider && chunkInputs.length > 0) {
       try {
+        await prisma.documentRevision.update({
+          where: { id: queuedJob.documentRevisionId },
+          data: {
+            status: "normalizing"
+          }
+        });
+
         const batches = chunkArray(chunkInputs, MEMORY_OBJECT_BATCH_SIZE);
 
         // Run semantic memory generation only after Docling extraction and ingest embeddings finish.
         for (const batch of batches) {
           const generated = await generateDocumentMemoryObjects({
             documentTitle: queuedJob.documentRevision.document.title,
-            wakeGenerationRuntime: false,
-            allowStaticGenerationProvider: false,
+            wakeGenerationRuntime: true,
+            allowStaticGenerationProvider: true,
             chunks: batch.map((chunk) => ({
               chunkIndex: chunk.chunkIndex,
               text: chunk.text,
@@ -366,6 +373,14 @@ export async function processQueuedIngestionJob() {
           "memory_object_generation_failed"
         );
       }
+    }
+
+    if (aiConfig.hasGenerationProvider && chunkInputs.length > 0 && generatedMemoryObjects.length === 0) {
+      throw new Error(
+        memoryObjectFailureReason
+          ? `Semantic memory generation failed: ${memoryObjectFailureReason}`
+          : "Semantic memory generation did not return any objects."
+      );
     }
 
     const indexCards =
