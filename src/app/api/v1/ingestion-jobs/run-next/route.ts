@@ -1,4 +1,5 @@
 import { ok, serverError } from "@/lib/api";
+import { sleepGpuRuntime } from "@/lib/gpu-runtime";
 import { processQueuedIngestionJobs } from "@/lib/worker";
 
 export async function POST(request: Request) {
@@ -8,6 +9,10 @@ export async function POST(request: Request) {
     const result = await processQueuedIngestionJobs({
       maxJobs: Number.isFinite(maxJobs) ? Math.max(1, Math.min(maxJobs as number, 100)) : undefined
     });
+
+    if (result.reason === "no_queued_jobs") {
+      await sleepGpuRuntime({ kind: "ingest" }).catch(() => undefined);
+    }
 
     return ok(result);
   } catch {
