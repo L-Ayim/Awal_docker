@@ -384,6 +384,8 @@ function sanitizeGeneratedAnswer(content: string) {
   return content
     .replace(/<think>[\s\S]*?<\/think>/gi, "")
     .replace(/^\s*think\s*[\r\n]+/gi, "")
+    .replace(/<\|[^|]+?\|>/g, "")
+    .replace(/<\/?[a-z][^>\n]*>/gi, "")
     .trim();
 }
 
@@ -544,6 +546,12 @@ function cleanLiveStreamingText(content: string) {
     .replace(/<think>[\s\S]*?<\/think>/gi, "")
     .replace(/<think>[\s\S]*$/i, "")
     .replace(/<\/?think>/gi, "")
+    .replace(/<\|[^|]+?\|>/g, "")
+    .replace(/<\|[^|]*$/g, "")
+    .replace(/<\/?[a-z][^>\n]*>/gi, "")
+    .replace(/<\/?[a-z][^>\n]*$/i, "")
+    .replace(/<[^>\n]+>/g, "")
+    .replace(/<[^>\n]*$/g, "")
     .replace(/\s*\[(?:\d+(?:\s*,\s*\d+)*)]\s*/g, " ")
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
