@@ -628,6 +628,7 @@ export function UploadConsole() {
   const [activeUploadCount, setActiveUploadCount] = useState(0);
   const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
   const [uploadBatches, setUploadBatches] = useState<UploadBatch[]>([]);
+  const [areUploadBatchesExpanded, setAreUploadBatchesExpanded] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [runQueueStatus, setRunQueueStatus] = useState<string | null>(null);
   const [ingestRuntime, setIngestRuntime] = useState<RuntimeSnapshot | null>(null);
@@ -1291,12 +1292,23 @@ export function UploadConsole() {
 
       {uploadBatches.length > 0 ? (
         <section className="upload-batch-panel" aria-label="Upload batches">
-          <div className="upload-batch-header">
-            <strong>Upload batches</strong>
-            <span>{uploadBatches.length} recent</span>
-          </div>
-          <div className="upload-batch-list">
-            {uploadBatches.map((batch) => {
+          <button
+            type="button"
+            className="upload-batch-header"
+            onClick={() => setAreUploadBatchesExpanded((current) => !current)}
+            aria-expanded={areUploadBatchesExpanded}
+          >
+            <span>
+              <ChevronDown aria-hidden="true" className={areUploadBatchesExpanded ? "expanded" : ""} />
+              <strong>Upload batches</strong>
+            </span>
+            <small>
+              {uploadBatches.filter((batch) => batch.status === "uploading" || batch.status === "importing").length} active ·{" "}
+              {uploadBatches.length} recent
+            </small>
+          </button>
+          <div className={`upload-batch-list${areUploadBatchesExpanded ? " expanded" : ""}`}>
+            {(areUploadBatchesExpanded ? uploadBatches : uploadBatches.slice(0, 2)).map((batch) => {
               const percent =
                 batch.totalBytes > 0
                   ? Math.min(100, Math.round((batch.uploadedBytes / batch.totalBytes) * 100))
