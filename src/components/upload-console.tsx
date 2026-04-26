@@ -901,7 +901,6 @@ export function UploadConsole() {
         <section className="upload-console">
           <header className="upload-console-header">
             <div>
-              <p className="upload-console-kicker">Awal library</p>
               <h1>Library</h1>
             </div>
             <div className="upload-console-header-side">
