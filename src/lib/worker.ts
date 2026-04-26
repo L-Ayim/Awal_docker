@@ -15,6 +15,7 @@ import { buildPdfCitationIndex, locateChunkInPdf } from "@/lib/pdf-citations";
 import { readStoredBytes } from "@/lib/storage";
 
 const MEMORY_OBJECT_BATCH_SIZE = 6;
+const DEFAULT_MAX_INGESTION_JOBS = 25;
 
 function chunkArray<T>(items: T[], size: number) {
   const batches: T[][] = [];
@@ -104,18 +105,25 @@ export async function processQueuedIngestionJob() {
     return { processed: false as const, reason: "no_queued_jobs" };
   }
 
-  await prisma.$transaction(async (tx) => {
-    await tx.ingestionJob.update({
-      where: { id: queuedJob.id },
-      data: {
-        status: "processing",
-        startedAt: new Date(),
-        attemptCount: {
-          increment: 1
-        }
+  const claimed = await prisma.ingestionJob.updateMany({
+    where: {
+      id: queuedJob.id,
+      status: "queued"
+    },
+    data: {
+      status: "processing",
+      startedAt: new Date(),
+      attemptCount: {
+        increment: 1
       }
-    });
+    }
+  });
 
+  if (claimed.count === 0) {
+    return { processed: false as const, reason: "job_already_claimed" };
+  }
+
+  await prisma.$transaction(async (tx) => {
     await tx.documentRevision.update({
       where: { id: queuedJob.documentRevisionId },
       data: {
@@ -504,4 +512,29 @@ export async function processQueuedIngestionJob() {
       revisionId: queuedJob.documentRevisionId
     };
   }
+}
+
+export async function processQueuedIngestionJobs(params: { maxJobs?: number } = {}) {
+  const maxJobs = params.maxJobs ?? DEFAULT_MAX_INGESTION_JOBS;
+  const results: Array<Awaited<ReturnType<typeof processQueuedIngestionJob>>> = [];
+
+  for (let index = 0; index < maxJobs; index += 1) {
+    const result = await processQueuedIngestionJob();
+    results.push(result);
+
+    if (!result.processed && result.reason !== "job_already_claimed") {
+      break;
+    }
+  }
+
+  const processedCount = results.filter((result) => result.processed).length;
+  const terminal = results.at(-1);
+
+  return {
+    processed: processedCount > 0,
+    processedCount,
+    maxJobs,
+    reason: terminal && !terminal.processed ? terminal.reason : null,
+    results
+  };
 }

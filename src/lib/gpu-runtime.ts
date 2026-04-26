@@ -5,6 +5,8 @@ const RUNPOD_REST_BASE_URL = process.env.RUNPOD_REST_BASE_URL || "https://rest.r
 const RUNPOD_GRAPHQL_URL = process.env.RUNPOD_GRAPHQL_URL || "https://api.runpod.io/graphql";
 const CHAT_RUNTIME_ID = "default";
 const INGEST_RUNTIME_ID = "ingest";
+const CHAT_WAKE_LOCK_ID = 42_001;
+const INGEST_WAKE_LOCK_ID = 42_002;
 
 export type GpuRuntimeKind = "chat" | "ingest";
 
@@ -557,6 +559,26 @@ async function createRunPodPod(profile: RuntimeProfile) {
   }
 }
 
+function getWakeLockId(kind: GpuRuntimeKind) {
+  return kind === "ingest" ? INGEST_WAKE_LOCK_ID : CHAT_WAKE_LOCK_ID;
+}
+
+async function withRuntimeWakeLock<T>(kind: GpuRuntimeKind, callback: () => Promise<T>) {
+  const prisma = getPrisma();
+  const lockId = getWakeLockId(kind);
+
+  return prisma.$transaction(
+    async (tx) => {
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(${lockId})`;
+      return callback();
+    },
+    {
+      maxWait: 30_000,
+      timeout: 300_000
+    }
+  );
+}
+
 async function updateRuntime(data: Prisma.GpuRuntimeUncheckedUpdateInput, kind: GpuRuntimeKind = "chat") {
   const prisma = getPrisma();
   const profile = getRuntimeProfile(kind);
@@ -687,39 +709,37 @@ export async function wakeGpuRuntime(
   const kind = normalizeRuntimeKind(params.kind);
   const profile = getRuntimeProfile(kind);
 
-  await updateRuntime(
-    {
-      status: "waking",
-      lastWakeAt: new Date(),
-      lastError: null
-    },
-    kind
-  );
+  const pod = await withRuntimeWakeLock(kind, async () => {
+    await updateRuntime(
+      {
+        status: "waking",
+        lastWakeAt: new Date(),
+        lastError: null
+      },
+      kind
+    );
 
-  const existing = await findActiveRuntimePod(profile);
+    const existing = await findActiveRuntimePod(profile);
 
-  if (existing) {
-    const runtime = await markPodReady(existing, profile);
-
-    if (params.waitForHealth) {
-      await waitForRuntime(existing.id, profile);
-      return getGpuRuntimeState(kind);
+    if (existing) {
+      await markPodReady(existing, profile);
+      return existing;
     }
 
-    return runtime;
-  }
+    const created = await createRunPodPod(profile);
 
-  const pod = await createRunPodPod(profile);
+    await updateRuntime(
+      {
+        status: "waking",
+        podId: created.id,
+        podName: created.name || null,
+        lastWakeAt: new Date()
+      },
+      kind
+    );
 
-  await updateRuntime(
-    {
-      status: "waking",
-      podId: pod.id,
-      podName: pod.name || null,
-      lastWakeAt: new Date()
-    },
-    kind
-  );
+    return created;
+  });
 
   if (params.waitForHealth) {
     await waitForRuntime(pod.id, profile);

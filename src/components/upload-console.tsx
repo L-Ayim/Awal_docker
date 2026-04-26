@@ -388,7 +388,7 @@ export function UploadConsole() {
     try {
       setIsRunning(true);
       setError(null);
-      await parseJson(await fetch("/api/v1/ingestion-jobs/run-next", { method: "POST" }));
+      await parseJson(await fetch("/api/v1/ingestion-jobs/run-next?maxJobs=50", { method: "POST" }));
       await refreshDocuments();
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Failed to run ingestion.");
