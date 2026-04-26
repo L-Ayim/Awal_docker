@@ -184,6 +184,15 @@ type UploadCandidate = {
   title: string;
 };
 
+type UploadProgress = {
+  filename: string;
+  current: number;
+  total: number;
+  loaded: number;
+  bytesTotal: number | null;
+  percent: number | null;
+};
+
 type FileSystemEntryLike = {
   name: string;
   fullPath?: string;
@@ -215,6 +224,48 @@ async function parseJson<T>(response: Response): Promise<T> {
   }
 
   return json as T;
+}
+
+function parseUploadResponse<T>(xhr: XMLHttpRequest): T {
+  const json = xhr.responseText ? JSON.parse(xhr.responseText) : null;
+
+  if (xhr.status < 200 || xhr.status >= 300) {
+    throw new Error(json?.message || json?.error || `Request failed with status ${xhr.status}.`);
+  }
+
+  return json as T;
+}
+
+function uploadWithProgress<T>({
+  url,
+  formData,
+  onProgress
+}: {
+  url: string;
+  formData: FormData;
+  onProgress: (event: ProgressEvent<EventTarget>) => void;
+}) {
+  return new Promise<{ status: number; payload: T | null }>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+
+    xhr.open("POST", url);
+    xhr.upload.onprogress = onProgress;
+    xhr.onerror = () => reject(new Error("Upload failed before the server received the file."));
+    xhr.onabort = () => reject(new Error("Upload was cancelled."));
+    xhr.onload = () => {
+      try {
+        if (xhr.status === 409) {
+          resolve({ status: xhr.status, payload: null });
+          return;
+        }
+
+        resolve({ status: xhr.status, payload: parseUploadResponse<T>(xhr) });
+      } catch (error) {
+        reject(error);
+      }
+    };
+    xhr.send(formData);
+  });
 }
 
 function formatBytes(value: string | null) {
@@ -537,6 +588,7 @@ export function UploadConsole() {
   const [expandedIds, setExpandedIds] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [runQueueStatus, setRunQueueStatus] = useState<string | null>(null);
   const [ingestRuntime, setIngestRuntime] = useState<RuntimeSnapshot | null>(null);
@@ -812,24 +864,50 @@ export function UploadConsole() {
           item instanceof File ? fileToUploadCandidate(item as UploadableFile) : item
       );
       const skipped: string[] = [];
+      const totalBytes = candidates.reduce((sum, candidate) => sum + candidate.file.size, 0);
+      let completedBytes = 0;
 
-      for (const candidate of candidates) {
+      for (const [index, candidate] of candidates.entries()) {
         const formData = new FormData();
         formData.set("file", candidate.file);
         formData.set("title", candidate.title);
         formData.set("ingestionMode", "standard");
 
-        const response = await fetch(`${documentUrl}/upload`, {
-          method: "POST",
-          body: formData
+        setUploadProgress({
+          filename: candidate.title,
+          current: index + 1,
+          total: candidates.length,
+          loaded: completedBytes,
+          bytesTotal: totalBytes || null,
+          percent: totalBytes > 0 ? Math.round((completedBytes / totalBytes) * 100) : null
         });
+
+        const response = await uploadWithProgress({
+          url: `${documentUrl}/upload`,
+          formData,
+          onProgress: (event) => {
+            const loaded = completedBytes + event.loaded;
+            const bytesTotal = totalBytes || (event.lengthComputable ? event.total : null);
+            const percent =
+              bytesTotal && bytesTotal > 0 ? Math.min(100, Math.round((loaded / bytesTotal) * 100)) : null;
+
+            setUploadProgress({
+              filename: candidate.title,
+              current: index + 1,
+              total: candidates.length,
+              loaded,
+              bytesTotal,
+              percent
+            });
+          }
+        });
+
+        completedBytes += candidate.file.size;
 
         if (response.status === 409) {
           skipped.push(candidate.title);
           continue;
         }
-
-        await parseJson(response);
       }
 
       await refreshDocuments();
@@ -850,6 +928,7 @@ export function UploadConsole() {
       setError(nextError instanceof Error ? nextError.message : "Failed to upload documents.");
     } finally {
       setIsUploading(false);
+      setUploadProgress(null);
     }
   }
 
@@ -1037,7 +1116,23 @@ export function UploadConsole() {
         </div>
         <div>
           <h2>{isUploading ? "Uploading documents" : "Drop documents, folders, or zip files"}</h2>
-          <p>Files are checked before ingestion, so duplicates are skipped instead of queued.</p>
+          <p>
+            {uploadProgress
+              ? `${uploadProgress.current}/${uploadProgress.total}: ${uploadProgress.filename}`
+              : "Files are checked before ingestion, so duplicates are skipped instead of queued."}
+          </p>
+          {uploadProgress ? (
+            <div className="upload-transfer-progress" aria-label="Upload progress">
+              <div className="upload-transfer-track">
+                <span style={{ width: `${uploadProgress.percent ?? 8}%` }} />
+              </div>
+              <strong>
+                {uploadProgress.percent !== null
+                  ? `${uploadProgress.percent}% uploaded`
+                  : `${formatBytes(String(uploadProgress.loaded))} uploaded`}
+              </strong>
+            </div>
+          ) : null}
         </div>
         <div className="upload-drop-actions">
           <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isUploading}>

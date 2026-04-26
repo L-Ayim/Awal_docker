@@ -520,6 +520,37 @@ h1 {
   line-height: 1.4;
 }
 
+.upload-transfer-progress {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  max-width: 520px;
+}
+
+.upload-transfer-progress strong {
+  color: var(--accent);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.upload-transfer-track {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(16, 82, 224, 0.11);
+}
+
+.upload-transfer-track span {
+  display: block;
+  height: 100%;
+  min-width: 8px;
+  border-radius: inherit;
+  background: var(--accent-strong);
+  transition: width 160ms ease;
+}
+
 .upload-drop-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1033,6 +1064,11 @@ h1 {
   }
 
   .upload-drop-actions {
+    gap: 6px;
+  }
+
+  .upload-transfer-progress {
+    grid-template-columns: 1fr;
     gap: 6px;
   }
 
