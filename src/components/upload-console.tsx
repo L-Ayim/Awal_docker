@@ -869,7 +869,7 @@ export function UploadConsole() {
               <MessageSquare aria-hidden="true" />
               <span>Chat</span>
             </Link>
-            <Link className="upload-nav-item active" href="/upload" aria-current="page">
+            <Link className="upload-nav-item active" href="/library" aria-current="page">
               <Library aria-hidden="true" />
               <span>Library</span>
             </Link>
@@ -913,17 +913,17 @@ export function UploadConsole() {
         <section className="upload-console">
           <header className="upload-console-header">
             <div>
-              <p className="upload-console-kicker">Awal document console</p>
-              <h1>Upload Library</h1>
+              <p className="upload-console-kicker">Awal library</p>
+              <h1>Library</h1>
             </div>
             <div className="upload-console-actions">
               <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isUploading}>
                 <Upload aria-hidden="true" />
-                <span>{isUploading ? "Uploading" : "Upload files"}</span>
+                <span>{isUploading ? "Adding" : "Add files"}</span>
               </button>
               <button type="button" onClick={() => folderInputRef.current?.click()} disabled={isUploading}>
                 <FolderUp aria-hidden="true" />
-                <span>Upload folder</span>
+                <span>Add folder</span>
               </button>
               <button type="button" onClick={() => void runNextJob()} disabled={isRunning}>
                 <Play aria-hidden="true" />

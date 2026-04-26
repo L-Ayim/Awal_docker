@@ -1,5 +1,5 @@
-import { UploadConsole } from "@/components/upload-console";
+import { redirect } from "next/navigation";
 
 export default function UploadPage() {
-  return <UploadConsole />;
+  redirect("/library");
 }

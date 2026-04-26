@@ -951,7 +951,8 @@ h1 {
 
 .sidebar-actions button,
 .sidebar-new-chat,
-.sidebar-upload {
+.sidebar-upload,
+.sidebar-library-link {
   border: 0;
   border-radius: 12px;
   background: transparent;
@@ -1005,7 +1006,8 @@ h1 {
 }
 
 .sidebar-new-chat,
-.sidebar-upload {
+.sidebar-upload,
+.sidebar-library-link {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1014,13 +1016,19 @@ h1 {
   background: var(--accent-soft);
 }
 
-.sidebar.sidebar-collapsed .sidebar-new-chat {
+.sidebar-library-link {
+  width: 100%;
+}
+
+.sidebar.sidebar-collapsed .sidebar-new-chat,
+.sidebar.sidebar-collapsed .sidebar-library-link {
   width: 48px;
   height: 48px;
   padding: 0;
 }
 
-.sidebar.sidebar-collapsed .sidebar-new-chat span {
+.sidebar.sidebar-collapsed .sidebar-new-chat span,
+.sidebar.sidebar-collapsed .sidebar-library-link span {
   display: none;
 }
 
@@ -1080,6 +1088,7 @@ h1 {
 
 .sidebar-new-chat svg,
 .sidebar-upload svg,
+.sidebar-library-link svg,
 .sidebar-icon-button svg,
 .composer-send-button svg,
 .composer-stop-button svg,

@@ -8,7 +8,7 @@ export function middleware(request: NextRequest) {
 
   if (isRoot && (isUploadHost || uploadMode)) {
     const url = request.nextUrl.clone();
-    url.pathname = "/upload";
+    url.pathname = "/library";
     return NextResponse.rewrite(url);
   }
 

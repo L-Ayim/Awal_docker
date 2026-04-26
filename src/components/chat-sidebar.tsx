@@ -1,6 +1,7 @@
 "use client";
 
-import { PanelLeftClose, Pencil, Plus, Trash2 } from "lucide-react";
+import Link from "next/link";
+import { Library, PanelLeftClose, Pencil, Plus, Trash2 } from "lucide-react";
 import type { ChatSession } from "@/types/chat";
 
 type ChatSidebarProps = {
@@ -73,6 +74,11 @@ export function ChatSidebar({
           <Plus aria-hidden="true" />
           <span>New Chat</span>
         </button>
+
+        <Link className="sidebar-library-link" href="/library" title="Library">
+          <Library aria-hidden="true" />
+          <span>Library</span>
+        </Link>
 
         <div className="sidebar-section">
           <span className="sidebar-label">Chats</span>
