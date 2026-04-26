@@ -345,6 +345,16 @@ function fileToUploadCandidate(file: UploadableFile): UploadCandidate {
   };
 }
 
+function isZipFile(candidate: UploadCandidate) {
+  const name = candidate.title || candidate.file.name;
+
+  return (
+    /\.zip$/i.test(name) ||
+    candidate.file.type === "application/zip" ||
+    candidate.file.type === "application/x-zip-compressed"
+  );
+}
+
 function readDirectoryEntries(reader: FileSystemDirectoryReaderLike): Promise<FileSystemEntryLike[]> {
   return new Promise((resolve, reject) => {
     const entries: FileSystemEntryLike[] = [];
@@ -811,6 +821,14 @@ export function UploadConsole() {
         (item): UploadCandidate =>
           item instanceof File ? fileToUploadCandidate(item as UploadableFile) : item
       );
+      const zipCandidates = candidates.filter(isZipFile);
+
+      if (zipCandidates.length > 0) {
+        throw new Error(
+          "Zip upload expansion is not enabled yet. Use Add folder or Add files so Awal uploads each document separately."
+        );
+      }
+
       const skipped: string[] = [];
 
       for (const candidate of candidates) {
@@ -1050,7 +1068,7 @@ export function UploadConsole() {
           </button>
           <span className="upload-drop-zip">
             <FileArchive aria-hidden="true" />
-            <span>Zip</span>
+            <span>Zip later</span>
           </span>
         </div>
       </section>
