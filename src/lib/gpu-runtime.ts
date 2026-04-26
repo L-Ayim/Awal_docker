@@ -612,6 +612,7 @@ async function markPodReady(pod: RunPodPod, profile: RuntimeProfile) {
       rerankBaseUrl: endpoints.rerankBaseUrl,
       portMappingsJson: pod.portMappings || {},
       lastHealthAt: new Date(),
+      lastRequestAt: healthy ? new Date() : undefined,
       lastError: healthy
         ? null
         : hasEndpointShape
@@ -837,6 +838,13 @@ export async function resolveGpuRuntimeEndpoints(
   }
 
   const awakened = await wakeGpuRuntime({ waitForHealth: true, kind });
+
+  await updateRuntime(
+    {
+      lastRequestAt: new Date()
+    },
+    kind
+  );
 
   return {
     llmBaseUrl: awakened.llmBaseUrl,
