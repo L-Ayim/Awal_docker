@@ -100,7 +100,9 @@ function getRuntimeProfile(kind: GpuRuntimeKind = "chat"): RuntimeProfile {
       mode: "ingest",
       namePrefix: prefix,
       podName: process.env.RUNPOD_INGEST_POD_NAME || `${prefix}-${Date.now()}`,
-      imageName: process.env.RUNPOD_INGEST_IMAGE || "ghcr.io/l-ayim/awal-runpod-ingest:latest",
+      imageName:
+        process.env.RUNPOD_INGEST_IMAGE ||
+        "runpod/pytorch:2.8.0-py3.11-cuda12.8.1-cudnn-devel-ubuntu22.04",
       ports: csvEnv("RUNPOD_INGEST_PORTS", "8010/http,8020/http,8030/http,22/tcp"),
       containerDiskGb: optionalNumberEnv("RUNPOD_INGEST_CONTAINER_DISK_GB", 40)
     };
@@ -439,7 +441,7 @@ function buildRuntimeEnv(profile: RuntimeProfile) {
     RUNPOD_FORCE_INSTALL: process.env.RUNPOD_FORCE_INSTALL || "0",
     RUNPOD_KEEPALIVE: process.env.RUNPOD_KEEPALIVE || "1",
     AWAL_VENV_DIR: process.env.AWAL_VENV_DIR || "/workspace/venvs/awal-runtime",
-    AWAL_INGEST_VENV_DIR: process.env.AWAL_INGEST_VENV_DIR || "/opt/awal-ingest-venv",
+    AWAL_INGEST_VENV_DIR: process.env.AWAL_INGEST_VENV_DIR || "/workspace/venvs/awal-ingest",
     HF_HOME: process.env.HF_HOME || "/workspace/.cache/huggingface",
     HF_TOKEN: process.env.HF_TOKEN || "",
     REPO_URL: process.env.REPO_URL || "https://github.com/L-Ayim/Awal_docker.git"
