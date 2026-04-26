@@ -156,6 +156,12 @@ type DocumentsResponse = {
   documents: DocumentRow[];
 };
 
+type RunQueueResponse = {
+  processed: boolean;
+  processedCount: number;
+  reason: string | null;
+};
+
 type RuntimeStatus = "asleep" | "waking" | "ready" | "stopping" | "failed";
 
 type RuntimeSnapshot = {
@@ -532,6 +538,7 @@ export function UploadConsole() {
   const [isLoading, setIsLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
+  const [runQueueStatus, setRunQueueStatus] = useState<string | null>(null);
   const [ingestRuntime, setIngestRuntime] = useState<RuntimeSnapshot | null>(null);
   const [isWakingIngestRuntime, setIsWakingIngestRuntime] = useState(false);
   const [isStoppingIngestRuntime, setIsStoppingIngestRuntime] = useState(false);
@@ -711,12 +718,35 @@ export function UploadConsole() {
     try {
       setIsRunning(true);
       setError(null);
-      await parseJson(await fetch("/api/v1/ingestion-jobs/run-next?maxJobs=50", { method: "POST" }));
+      setRunQueueStatus("Starting queue");
+      let totalProcessed = 0;
+
+      for (let batch = 1; batch <= 40; batch += 1) {
+        const result = await parseJson<RunQueueResponse>(
+          await fetch("/api/v1/ingestion-jobs/run-next?maxJobs=10", { method: "POST" })
+        );
+
+        totalProcessed += result.processedCount;
+        setRunQueueStatus(
+          result.reason === "no_queued_jobs"
+            ? totalProcessed > 0
+              ? `Processed ${totalProcessed} document(s)`
+              : "No queued documents"
+            : `Processed ${totalProcessed} document(s)`
+        );
+        await refreshDocuments();
+
+        if (!result.processed || result.reason === "no_queued_jobs") {
+          break;
+        }
+      }
+
       await refreshDocuments();
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Failed to run ingestion.");
     } finally {
       setIsRunning(false);
+      window.setTimeout(() => setRunQueueStatus(null), 5000);
     }
   }
 
@@ -948,6 +978,7 @@ export function UploadConsole() {
                   <span>{isRunning ? "Running" : "Run queue"}</span>
                 </button>
               </div>
+              {runQueueStatus ? <p className="upload-queue-status">{runQueueStatus}</p> : null}
             </div>
           </header>
 

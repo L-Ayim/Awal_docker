@@ -401,6 +401,14 @@ h1 {
   justify-content: flex-end;
 }
 
+.upload-queue-status {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-align: right;
+}
+
 .upload-console-header-side {
   display: flex;
   flex-direction: column;
@@ -924,6 +932,10 @@ h1 {
 
   .upload-console-actions.compact {
     justify-content: flex-start;
+  }
+
+  .upload-queue-status {
+    text-align: left;
   }
 
   .upload-drop-zone {
